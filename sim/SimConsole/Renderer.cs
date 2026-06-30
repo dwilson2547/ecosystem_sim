@@ -104,8 +104,8 @@ public class Renderer
 
     private void RenderPopulations(WorldMap map)
     {
-        WriteLine($"{"SPECIES",-20} {"FACTION",-18} {"TILE",-7} {"COUNT",6}  {"TREND",5}  SAT   FERT    DISEASE");
-        WriteLine(new string('─', 84), ConsoleColor.DarkGray);
+        WriteLine($"{"SPECIES",-20} {"FACTION",-18} {"TILE",-7} {"COUNT",6}  {"TREND",5}  SAT   FERT   SIZE   DISEASE");
+        WriteLine(new string('─', 91), ConsoleColor.DarkGray);
 
         var populations = map.AllPopulations()
             .Where(p => p.Count > 0)
@@ -141,6 +141,11 @@ public class Renderer
                 : fertAmount > 20 ? ConsoleColor.DarkGreen
                 : ConsoleColor.DarkGray;
             Write($"  {fertAmount,4}", fertColor);
+
+            var sizeColor = pop.SizeIndex > 1.02f ? ConsoleColor.Green
+                : pop.SizeIndex < 0.98f ? ConsoleColor.Red
+                : ConsoleColor.DarkGray;
+            Write($"  {pop.SizeIndex:F2}x", sizeColor);
 
             if (pop.Disease is not null)
             {

@@ -735,4 +735,165 @@ public class WorldTests
 
         Assert.False(a.Relations[b].HasTradeAgreement, "trade agreement should be broken when at war");
     }
+
+    // ── Evolution tests ─────────────────────────────────────────────────────
+
+    private static Population PopOnTile(World world, Tile tile, int count, float consumptionRate = 1f)
+    {
+        var species = new SpeciesDefinition { Name = "Evo", ConsumptionRates = { [ResourceType.Food] = consumptionRate }, ReproductionRate = 0, StarvationRate = 0 };
+        var pop = new Population { Species = species, Count = count };
+        tile.Populations.Add(pop);
+        return pop;
+    }
+
+    [Fact]
+    public void Tick_AbundanceAccumulatesPositiveSizePressure()
+    {
+        var world = new World();
+        var tile  = world.State.Map.GetTile(0, 0);
+        var pop   = PopOnTile(world, tile, 10);
+        tile.Resources.Add(AbundantFood());
+
+        world.Tick();
+
+        Assert.True(pop.SizePressure > 0, "a well-fed population should accumulate positive size pressure");
+    }
+
+    [Fact]
+    public void Tick_ScarcityAccumulatesNegativeSizePressure()
+    {
+        var world = new World();
+        var tile  = world.State.Map.GetTile(0, 0);
+        var pop   = PopOnTile(world, tile, 10);
+        tile.Resources.Add(EmptyFood()); // no food → satisfaction 0 → scarcity
+
+        world.Tick();
+
+        Assert.True(pop.SizePressure < 0, "a starving population should accumulate negative size pressure");
+    }
+
+    [Fact]
+    public void Tick_SizePressureThresholdGrowsSizeIndex()
+    {
+        var world = new World();
+        var tile  = world.State.Map.GetTile(0, 0);
+        var pop   = PopOnTile(world, tile, 10);
+        tile.Resources.Add(AbundantFood());
+        pop.SizePressure = 49f; // one tick of abundance pushes it over
+
+        world.Tick();
+
+        Assert.True(pop.SizeIndex > 1.0f, "pressure threshold crossing should increase SizeIndex");
+        Assert.Equal(0f, pop.SizePressure); // resets after crossing
+    }
+
+    [Fact]
+    public void Tick_SizePressureThresholdShrinksSize()
+    {
+        var world = new World();
+        var tile  = world.State.Map.GetTile(0, 0);
+        var pop   = PopOnTile(world, tile, 10);
+        tile.Resources.Add(EmptyFood());
+        pop.SizePressure = -49f; // one tick of scarcity pushes it over
+
+        world.Tick();
+
+        Assert.True(pop.SizeIndex < 1.0f, "negative pressure threshold crossing should decrease SizeIndex");
+        Assert.Equal(0f, pop.SizePressure);
+    }
+
+    [Fact]
+    public void Tick_LargerSizeConsumesMoreFood()
+    {
+        var world = new World();
+        var tileA = world.State.Map.GetTile(0, 0);
+        var tileB = world.State.Map.GetTile(9, 9);
+
+        const float startFood = 500f;
+        tileA.Resources.Add(new ResourcePool { Type = ResourceType.Food, Amount = startFood, Capacity = 1000f, RegenPerTick = 0 });
+        tileB.Resources.Add(new ResourcePool { Type = ResourceType.Food, Amount = startFood, Capacity = 1000f, RegenPerTick = 0 });
+
+        var large  = PopOnTile(world, tileA, 10); large.SizeIndex  = 2.0f;
+        var normal = PopOnTile(world, tileB, 10); normal.SizeIndex = 1.0f;
+
+        world.Tick();
+
+        var foodAfterLarge  = tileA.Resources.First().Amount;
+        var foodAfterNormal = tileB.Resources.First().Amount;
+        Assert.True(foodAfterLarge < foodAfterNormal, "larger population should consume more food per individual");
+    }
+
+    [Fact]
+    public void Tick_LargerSizeDealsMoreCombatDamage()
+    {
+        var world = new World();
+        var (factionA, popA) = MakeFactionOnTile(world, "A", 0, 0, 100);
+        var (factionB, popB) = MakeFactionOnTile(world, "B", 0, 0, 100);
+        DeclareWar(factionA, factionB);
+
+        popA.SizeIndex = 2.0f; // bigger attacker
+        var initialB = popB.Count;
+
+        world.Tick();
+
+        // run a baseline with normal-sized A
+        var world2 = new World();
+        var (fa2, pa2) = MakeFactionOnTile(world2, "A", 0, 0, 100);
+        var (fb2, pb2) = MakeFactionOnTile(world2, "B", 0, 0, 100);
+        DeclareWar(fa2, fb2);
+        world2.Tick();
+
+        Assert.True(popB.Count < pb2.Count, "larger attacker (SizeIndex=2) should inflict more casualties");
+    }
+
+    [Fact]
+    public void Tick_DiseaseExposureAccumulatesImmunityPressure()
+    {
+        var world = new World();
+        var tile  = world.State.Map.GetTile(0, 0);
+        var pop   = PopOnTile(world, tile, 100);
+        pop.Disease       = TestDisease(spread: 0f);
+        pop.InfectionLevel = 0.5f;
+
+        world.Tick();
+
+        Assert.True(pop.ImmunityPressure > 0, "a diseased population should accumulate immunity pressure");
+    }
+
+    [Fact]
+    public void Tick_ImmunityPressureThresholdGainsImmunityDelta()
+    {
+        var world = new World();
+        var tile  = world.State.Map.GetTile(0, 0);
+        var pop   = PopOnTile(world, tile, 100);
+        pop.Disease          = TestDisease(spread: 0f, mortality: 0f);
+        pop.InfectionLevel   = 0.5f;
+        pop.ImmunityPressure = 29f; // one more tick of infection crosses threshold
+
+        world.Tick();
+
+        Assert.True(pop.ImmunityDelta > 0f, "crossing immunity pressure threshold should increase ImmunityDelta");
+        Assert.Equal(0f, pop.ImmunityPressure);
+    }
+
+    [Fact]
+    public void Tick_EvolvedImmunityReducesDiseaseDeaths()
+    {
+        var world    = new World();
+        var tileA    = world.State.Map.GetTile(0, 0);
+        var tileB    = world.State.Map.GetTile(9, 9);
+        var disease  = TestDisease(spread: 0f, mortality: 0.3f);
+        var speciesA = new SpeciesDefinition { Name = "Evolved",  Immunity = 0f, ReproductionRate = 0, StarvationRate = 0 };
+        var speciesB = new SpeciesDefinition { Name = "Baseline", Immunity = 0f, ReproductionRate = 0, StarvationRate = 0 };
+
+        var evolved   = new Population { Species = speciesA, Count = 100, Disease = disease, InfectionLevel = 1f, ImmunityDelta = 0.5f };
+        var baseline  = new Population { Species = speciesB, Count = 100, Disease = disease, InfectionLevel = 1f };
+        tileA.Populations.Add(evolved);
+        tileB.Populations.Add(baseline);
+
+        world.Tick();
+
+        Assert.True(evolved.Count > baseline.Count,
+            "population with gained ImmunityDelta should lose fewer individuals to disease");
+    }
 }

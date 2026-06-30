@@ -20,6 +20,7 @@ public class World
         SpreadDisease();
         ExecuteTrade();
         UpdateFactionRelations();
+        ApplyEvolution();
         State.Tick++;
     }
 
@@ -59,7 +60,7 @@ public class World
             var pool = tile.Resources.FirstOrDefault(r => r.Type == resourceType);
 
             var demands = tile.Populations
-                .Select(p => (pop: p, demand: p.Count * p.Species.ConsumptionRates.GetValueOrDefault(resourceType)))
+                .Select(p => (pop: p, demand: p.Count * p.EffectiveConsumptionRate(resourceType)))
                 .ToList();
 
             var totalDemand = demands.Sum(d => d.demand);
@@ -128,7 +129,14 @@ public class World
                 p.Species == pop.Species && (pop.Faction is null || p.Faction == pop.Faction));
 
             if (existing is not null)
+            {
+                // blend evolved traits weighted by count before merging
+                var total = (float)(existing.Count + pop.Count);
+                existing.SizeIndex     = (existing.SizeIndex     * existing.Count + pop.SizeIndex     * pop.Count) / total;
+                existing.ImmunityDelta = (existing.ImmunityDelta * existing.Count + pop.ImmunityDelta * pop.Count) / total;
+                existing.SizePressure  = (existing.SizePressure  * existing.Count + pop.SizePressure  * pop.Count) / total;
                 existing.Count += pop.Count;
+            }
             else
                 to.AddPopulation(pop);
         }
@@ -164,7 +172,7 @@ public class World
         foreach (var pop in State.Map.AllPopulations().Where(p => p.Count > 0 && p.Disease is not null))
         {
             var disease  = pop.Disease!;
-            var immunity = pop.Species.Immunity;
+            var immunity = pop.EffectiveImmunity;
 
             var deaths = (int)Math.Ceiling(pop.Count * pop.InfectionLevel * disease.MortalityRate * (1f - immunity));
             pop.Count = Math.Max(0, pop.Count - deaths);
@@ -185,7 +193,7 @@ public class World
                 if (target == source || target.Count == 0) continue;
                 if (target.Disease is not null && target.Disease != disease) continue;
 
-                var amount = baseAmount * (1f - target.Species.Immunity);
+                var amount = baseAmount * (1f - target.EffectiveImmunity);
                 if (amount <= 0) continue;
 
                 if (exposures.TryGetValue(target, out var existing))
@@ -289,13 +297,58 @@ public class World
                 if (!attacker.Faction.Relations.TryGetValue(defender.Faction, out var relation)) continue;
                 if (relation.State != DiplomaticState.AtWar) continue;
 
-                var damage = (int)Math.Ceiling(attacker.Count * attacker.Species.CombatStrength * CombatRate);
+                var damage = (int)Math.Ceiling(attacker.Count * attacker.EffectiveCombatStrength * CombatRate);
                 casualties[defender] = casualties.GetValueOrDefault(defender) + damage;
             }
         }
 
         foreach (var (pop, loss) in casualties)
             pop.Count = Math.Max(0, pop.Count - loss);
+    }
+
+    private void ApplyEvolution()
+    {
+        const float AbundanceThreshold    = 0.90f;
+        const float ScarcityThreshold     = 0.50f;
+        const float SizePressureTarget    = 50f;   // ticks until size shifts
+        const float SizeStep              = 0.05f;
+        const float SizeMin               = 0.50f;
+        const float SizeMax               = 2.00f;
+        const float ImmunityPressureTarget = 30f;  // ticks of disease exposure until immunity gains
+        const float ImmunityStep          = 0.02f;
+        const float ImmunityMax           = 0.50f; // cap on gained immunity above species baseline
+
+        foreach (var pop in State.Map.AllPopulations())
+        {
+            if (pop.Count == 0) continue;
+
+            // SIZE — sustained abundance grows the population, sustained scarcity shrinks it
+            if (pop.LastSatisfaction >= AbundanceThreshold)
+                pop.SizePressure++;
+            else if (pop.LastSatisfaction < ScarcityThreshold)
+                pop.SizePressure--;
+
+            if (pop.SizePressure >= SizePressureTarget)
+            {
+                pop.SizeIndex    = Math.Min(SizeMax, pop.SizeIndex + SizeStep);
+                pop.SizePressure = 0f;
+            }
+            else if (pop.SizePressure <= -SizePressureTarget)
+            {
+                pop.SizeIndex    = Math.Max(SizeMin, pop.SizeIndex - SizeStep);
+                pop.SizePressure = 0f;
+            }
+
+            // IMMUNITY — surviving disease exposure permanently hardens the population
+            if (pop.Disease is not null && pop.InfectionLevel > 0.1f)
+                pop.ImmunityPressure++;
+
+            if (pop.ImmunityPressure >= ImmunityPressureTarget)
+            {
+                pop.ImmunityDelta    = Math.Min(ImmunityMax, pop.ImmunityDelta + ImmunityStep);
+                pop.ImmunityPressure = 0f;
+            }
+        }
     }
 
     private void UpdateFactionRelations()
@@ -417,11 +470,12 @@ public class World
         ResourceType? worst = null;
         var worstRatio = float.MaxValue;
 
-        foreach (var (resourceType, rate) in pop.Species.ConsumptionRates)
+        foreach (var resourceType in pop.Species.ConsumptionRates.Keys)
         {
-            if (rate == 0) continue;
+            var effectiveRate = pop.EffectiveConsumptionRate(resourceType);
+            if (effectiveRate == 0) continue;
             var pool = tile.Resources.FirstOrDefault(r => r.Type == resourceType);
-            var ratio = pool is null ? 0f : pool.Amount / (pop.Count * rate);
+            var ratio = pool is null ? 0f : pool.Amount / (pop.Count * effectiveRate);
             if (ratio < worstRatio)
             {
                 worstRatio = ratio;

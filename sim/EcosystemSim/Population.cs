@@ -18,5 +18,28 @@ public class Population
     public Disease? Disease { get; set; }
     public float InfectionLevel { get; set; }
 
-    // future state: morale, aggression level, etc.
+    // ── evolution ────────────────────────────────────────────────────────────
+
+    // >1 = grown larger (stronger + hungrier), <1 = shrunk (weaker + leaner)
+    public float SizeIndex { get; set; } = 1.0f;
+
+    // accumulates +1 per tick of abundance, -1 per tick of scarcity;
+    // each ±50-tick crossing shifts SizeIndex by 0.05 and resets to zero
+    public float SizePressure { get; set; }
+
+    // permanently gained disease resistance (0–0.5); never decreases
+    public float ImmunityDelta { get; set; }
+
+    // accumulates +1 per tick while infected; each 30-tick crossing adds 0.02 to ImmunityDelta
+    public float ImmunityPressure { get; set; }
+
+    // ── effective stats (base species trait + evolution modifier) ─────────────
+
+    public float EffectiveCombatStrength => Species.CombatStrength * MathF.Sqrt(SizeIndex);
+
+    public float EffectiveImmunity => MathF.Min(1f, Species.Immunity + ImmunityDelta);
+
+    // food consumption scales with size; other resources unchanged
+    public float EffectiveConsumptionRate(ResourceType type) =>
+        Species.ConsumptionRates.GetValueOrDefault(type) * (type == ResourceType.Food ? SizeIndex : 1f);
 }
