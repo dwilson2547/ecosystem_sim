@@ -18,7 +18,7 @@ public class Renderer
     {
         Console.SetCursorPosition(0, 0);
 
-        RenderHeader(world.State.Tick, speed, paused);
+        RenderHeader(world.State, speed, paused);
         Console.WriteLine();
         RenderMap(world.State.Map);
         Console.WriteLine();
@@ -30,10 +30,22 @@ public class Renderer
             _prevCounts[pop] = pop.Count;
     }
 
-    private static void RenderHeader(int tick, float speed, bool paused)
+    private static void RenderHeader(WorldState state, float speed, bool paused)
     {
+        var year = state.Tick / (World.TicksPerSeason * 4) + 1;
+        var seasonColor = state.CurrentSeason switch
+        {
+            Season.Spring => ConsoleColor.Green,
+            Season.Summer => ConsoleColor.Yellow,
+            Season.Autumn => ConsoleColor.DarkYellow,
+            Season.Winter => ConsoleColor.Cyan,
+            _             => ConsoleColor.Gray,
+        };
+
         Write("EcosystemSim", ConsoleColor.White);
-        Write($"  Tick: {tick,6}", ConsoleColor.DarkGray);
+        Write($"  Tick: {state.Tick,6}", ConsoleColor.DarkGray);
+        Write($"  Y{year} ", ConsoleColor.DarkGray);
+        Write($"{state.CurrentSeason}", seasonColor);
         Write($"  Speed: {speed}x");
 
         if (paused)

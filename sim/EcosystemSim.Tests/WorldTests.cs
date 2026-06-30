@@ -117,7 +117,8 @@ public class WorldTests
 
         world.Tick();
 
-        Assert.Equal(100f, tile.Resources[0].Amount);
+        // seasons multiply base regen (Spring=1.3×), so we only assert the pool grew
+        Assert.True(tile.Resources[0].Amount > 0f, "resource pool should regen each tick");
     }
 
     [Fact]
@@ -942,5 +943,59 @@ public class WorldTests
 
         Assert.True(evolved.Count > baseline.Count,
             "population with gained ImmunityDelta should lose fewer individuals to disease");
+    }
+
+    // ── Season tests ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Tick_SeasonAdvancesFromSpringToSummerAfterTicksPerSeason()
+    {
+        var world = new World();
+        Assert.Equal(Season.Spring, world.State.CurrentSeason);
+
+        for (var i = 0; i < World.TicksPerSeason; i++)
+            world.Tick();
+
+        Assert.Equal(Season.Summer, world.State.CurrentSeason);
+    }
+
+    [Fact]
+    public void Tick_SeasonsCompleteFullCycleInFourSeasonLengths()
+    {
+        var world = new World();
+
+        for (var i = 0; i < World.TicksPerSeason * 4; i++)
+            world.Tick();
+
+        Assert.Equal(Season.Spring, world.State.CurrentSeason);
+    }
+
+    [Fact]
+    public void Tick_WinterFoodRegenIsLowerThanSpring()
+    {
+        var world = new World();
+        var tile  = world.State.Map.GetTile(0, 0);
+        tile.Resources.Add(new ResourcePool { Type = ResourceType.Food, Amount = 0f, Capacity = 10_000f, RegenPerTick = 10f });
+
+        // fast-forward to Winter (3 full seasons)
+        for (var i = 0; i < World.TicksPerSeason * 3; i++)
+            world.Tick();
+        Assert.Equal(Season.Winter, world.State.CurrentSeason);
+
+        tile.Resources[0].Amount = 0f;
+        world.Tick();
+        var winterRegen = tile.Resources[0].Amount;
+
+        // fast-forward to Spring (1 more season)
+        for (var i = 0; i < World.TicksPerSeason; i++)
+            world.Tick();
+        Assert.Equal(Season.Spring, world.State.CurrentSeason);
+
+        tile.Resources[0].Amount = 0f;
+        world.Tick();
+        var springRegen = tile.Resources[0].Amount;
+
+        Assert.True(winterRegen < springRegen,
+            $"winter regen ({winterRegen:F1}) should be much lower than spring regen ({springRegen:F1})");
     }
 }

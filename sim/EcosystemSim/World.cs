@@ -22,19 +22,47 @@ public class World
         UpdateFactionRelations();
         ApplyEvolution();
         State.Tick++;
+        AdvanceSeason();
     }
 
     public void Apply(IWorldCommand command) => command.Execute(State);
 
-    private const float FertilizerBoost = 0.02f; // food regen bonus per unit of fertilizer on tile
+    public const int TicksPerSeason = 25;
 
-    private static void RegenerateResources(Tile tile)
+    private const float FertilizerBoost = 0.02f;
+
+    private void RegenerateResources(Tile tile)
     {
         var fertilizer = tile.Byproducts.FirstOrDefault(b => b.Type == ByproductType.Fertilizer);
         var fertBonus  = fertilizer is not null ? fertilizer.Amount * FertilizerBoost : 0f;
 
         foreach (var pool in tile.Resources)
-            pool.Regen(pool.Type == ResourceType.Food ? fertBonus : 0f);
+        {
+            var seasonMult = SeasonMultiplier(State.CurrentSeason, pool.Type);
+            var bonus      = pool.Type == ResourceType.Food ? fertBonus : 0f;
+            pool.Amount = MathF.Min(pool.Capacity, pool.Amount + pool.RegenPerTick * seasonMult + bonus);
+        }
+    }
+
+    private static float SeasonMultiplier(Season season, ResourceType type) => (season, type) switch
+    {
+        (Season.Spring, ResourceType.Food)  => 1.3f,
+        (Season.Spring, ResourceType.Water) => 1.4f,
+        (Season.Summer, ResourceType.Food)  => 1.0f,
+        (Season.Summer, ResourceType.Water) => 0.5f,
+        (Season.Autumn, ResourceType.Food)  => 0.8f,
+        (Season.Autumn, ResourceType.Water) => 1.0f,
+        (Season.Winter, ResourceType.Food)  => 0.3f,
+        (Season.Winter, ResourceType.Water) => 0.2f,
+        _                                   => 1.0f,
+    };
+
+    private void AdvanceSeason()
+    {
+        State.SeasonTick++;
+        if (State.SeasonTick < TicksPerSeason) return;
+        State.SeasonTick   = 0;
+        State.CurrentSeason = (Season)(((int)State.CurrentSeason + 1) % 4);
     }
 
     private static void ProduceByproducts(Tile tile)
