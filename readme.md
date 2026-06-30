@@ -8,3 +8,5 @@ user created disasters/conflicts
 controls drag and drop style, top down civ like interface
 
 map builder
+
+add individual food resources and land/sea food options to the game
