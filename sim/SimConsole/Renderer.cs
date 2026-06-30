@@ -108,11 +108,10 @@ public class Renderer
         WriteLine(new string('─', 91), ConsoleColor.DarkGray);
 
         var populations = map.AllPopulations()
-            .Where(p => p.Count > 0)
-            .OrderByDescending(p => p.Count)
+            .OrderByDescending(p => p.Count) // extinct (Count=0) naturally fall to the bottom
             .ToList();
 
-        if (populations.Count == 0)
+        if (populations.All(p => p.Count == 0))
         {
             WriteLine("  All species extinct.", ConsoleColor.Red);
             return;
@@ -132,6 +131,14 @@ public class Renderer
             Write($" {factionName,-18}");
             Write($" ({tile.X},{tile.Y})  ");
             Write($"{pop.Count,6}  ");
+
+            if (pop.Count == 0)
+            {
+                Write("  [EXTINCT]", ConsoleColor.DarkGray);
+                Console.WriteLine();
+                continue;
+            }
+
             Write($"{trend,5}  ", trendColor);
             Write($"{satisfaction,3}%", satColor);
 

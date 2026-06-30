@@ -97,9 +97,9 @@ public class WorldTests
 
         world.Tick();
 
-        // extinct population is removed from the tile; count never goes negative
+        // count never goes negative; population stays on tile for history
         Assert.Equal(0, pop.Count);
-        Assert.DoesNotContain(pop, tile.Populations);
+        Assert.Equal(0f, pop.LastSatisfaction); // dead pops don't get 1.0 satisfaction
     }
 
     [Fact]

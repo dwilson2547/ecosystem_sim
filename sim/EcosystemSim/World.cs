@@ -53,7 +53,7 @@ public class World
     private static void DistributeResources(Tile tile)
     {
         foreach (var pop in tile.Populations)
-            pop.LastSatisfaction = 1f;
+            pop.LastSatisfaction = pop.Count > 0 ? 1f : 0f;
 
         foreach (var resourceType in Enum.GetValues<ResourceType>())
         {
@@ -98,11 +98,6 @@ public class World
                 pop.Count = Math.Max(0, pop.Count - deaths);
             }
         }
-
-        // remove extinct populations from the tile so they don't linger at Count=0
-        var extinct = tile.Populations.Where(p => p.Count == 0).ToList();
-        foreach (var pop in extinct)
-            tile.RemovePopulation(pop);
     }
 
     private void Migrate()
