@@ -88,7 +88,8 @@ public class World
 
             if (satisfaction >= 1f)
             {
-                pop.Count += (int)(pop.Count * pop.Species.ReproductionRate);
+                // ceiling ensures small-but-surviving populations can recover (avoids int-truncation limbo)
+                pop.Count += (int)Math.Ceiling(pop.Count * pop.Species.ReproductionRate);
             }
             else
             {
@@ -97,6 +98,11 @@ public class World
                 pop.Count = Math.Max(0, pop.Count - deaths);
             }
         }
+
+        // remove extinct populations from the tile so they don't linger at Count=0
+        var extinct = tile.Populations.Where(p => p.Count == 0).ToList();
+        foreach (var pop in extinct)
+            tile.RemovePopulation(pop);
     }
 
     private void Migrate()
@@ -363,10 +369,11 @@ public class World
     private static void UpdateRelationBetween(Faction a, Faction b)
     {
         const int   ProximityRange     = 5;
-        const float DecayRate          = 0.08f; // tension moves toward 0 per tick when out of range
-        const float AggressionScale    = 0.12f; // multiplier on aggression × proximity
-        const int   CeasefireThreshold = 25;    // ticks at war before ceasefire pressure kicks in
-        const float CeasefireDecay     = 0.10f; // tension reduction per tick once exhausted
+        const float DecayRate          = 0.10f; // tension moves toward 0 per tick when out of range
+        const float AggressionScale    = 0.10f; // multiplier on aggression × proximity
+        const float PeaceDrift         = 0.03f; // natural de-escalation each tick when not at war
+        const int   CeasefireThreshold = 20;    // ticks at war before ceasefire pressure kicks in
+        const float CeasefireDecay     = 0.15f; // tension reduction per tick once exhausted
 
         if (!a.Relations.ContainsKey(b))
             a.Relations[b] = new FactionRelation { Other = b };
@@ -394,6 +401,10 @@ public class World
             // resource competition: shared scarce resources escalate, complementary resources de-escalate
             delta += ResourceCompetitionPressure(a, b);
 
+            // natural tendency toward peace when not actively at war
+            if (relation.State != DiplomaticState.AtWar)
+                delta -= PeaceDrift;
+
             // war exhaustion: after sustained conflict, ceasefire pressure builds
             if (relation.State == DiplomaticState.AtWar)
             {
@@ -413,20 +424,21 @@ public class World
         }
     }
 
-    // shared scarce resources → escalation; complementary resources → slight peace bias
+    // shared starving resources → escalation; complementary resources → cooperation bias
     private static float ResourceCompetitionPressure(Faction a, Faction b)
     {
         var sharedResources = a.PrimarySpecies.ConsumptionRates.Keys
             .Intersect(b.PrimarySpecies.ConsumptionRates.Keys)
             .Count();
 
-        if (sharedResources == 0) return -0.05f;
+        if (sharedResources == 0) return -0.08f; // complementary niches actively build cooperation
 
-        var eitherStressed = a.Populations.Concat(b.Populations)
+        // only escalate when populations are genuinely starving, not just a bit hungry
+        var eitherStarving = a.Populations.Concat(b.Populations)
             .Where(p => p.Count > 0)
-            .Any(p => p.LastSatisfaction < 0.7f);
+            .Any(p => p.LastSatisfaction < 0.5f);
 
-        return eitherStressed ? 0.20f : 0.05f;
+        return eitherStarving ? 0.10f : 0.01f;
     }
 
     private static void SyncRelation(Faction a, Faction b, float tensionScore)

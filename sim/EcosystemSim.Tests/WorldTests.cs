@@ -87,21 +87,19 @@ public class WorldTests
     public void Tick_PopulationNeverGoesBelowZero()
     {
         var world = new World();
-        var tile = world.State.Map.GetTile(0, 0);
-        tile.Populations.Add(new Population
+        var tile  = world.State.Map.GetTile(0, 0);
+        var pop   = new Population
         {
-            Species = new SpeciesDefinition
-            {
-                Name = "Fragile",
-                ConsumptionRates = { [ResourceType.Food] = 1f },
-                StarvationRate = 1f
-            },
+            Species = new SpeciesDefinition { Name = "Fragile", ConsumptionRates = { [ResourceType.Food] = 1f }, StarvationRate = 1f },
             Count = 1
-        });
+        };
+        tile.Populations.Add(pop);
 
         world.Tick();
 
-        Assert.Equal(0, tile.Populations[0].Count);
+        // extinct population is removed from the tile; count never goes negative
+        Assert.Equal(0, pop.Count);
+        Assert.DoesNotContain(pop, tile.Populations);
     }
 
     [Fact]
@@ -394,16 +392,16 @@ public class WorldTests
     }
 
     [Fact]
-    public void Tick_FactionsInProximityBuildTension()
+    public void Tick_HighAggressionFactionsInProximityBuildTension()
     {
-        var world = new World();
-        var species = BasicSpecies();
+        var world   = new World();
+        // aggression high enough to overcome peace drift even when well-fed
+        var species = new SpeciesDefinition { Name = "Aggressive", WarAggression = 0.5f, ConsumptionRates = { [ResourceType.Food] = 1f }, ReproductionRate = 0, StarvationRate = 0 };
 
         var factionA = new Faction { Name = "A", PrimarySpecies = species };
         var factionB = new Faction { Name = "B", PrimarySpecies = species };
         world.State.Factions.AddRange([factionA, factionB]);
 
-        // place them adjacent — will compete for same food resource
         var popA = new Population { Species = species, Count = 10 };
         var popB = new Population { Species = species, Count = 10 };
         factionA.AddPopulation(popA);
@@ -414,11 +412,36 @@ public class WorldTests
         world.State.Map.GetTile(0, 0).Resources.Add(AbundantFood());
         world.State.Map.GetTile(1, 0).Resources.Add(AbundantFood());
 
-        world.Tick();
-        world.Tick();
-        world.Tick();
+        for (var i = 0; i < 5; i++) world.Tick();
 
-        Assert.True(factionA.Relations[factionB].TensionScore > 0, "competing factions in proximity should build tension");
+        Assert.True(factionA.Relations[factionB].TensionScore > 0,
+            "high-aggression factions in proximity should build tension even when well-fed");
+    }
+
+    [Fact]
+    public void Tick_WellFedLowAggressionFactionsDoNotEscalate()
+    {
+        var world   = new World();
+        var species = new SpeciesDefinition { Name = "Peaceful", WarAggression = 0.2f, ConsumptionRates = { [ResourceType.Food] = 1f }, ReproductionRate = 0, StarvationRate = 0 };
+
+        var factionA = new Faction { Name = "A", PrimarySpecies = species };
+        var factionB = new Faction { Name = "B", PrimarySpecies = species };
+        world.State.Factions.AddRange([factionA, factionB]);
+
+        var popA = new Population { Species = species, Count = 10 };
+        var popB = new Population { Species = species, Count = 10 };
+        factionA.AddPopulation(popA);
+        factionB.AddPopulation(popB);
+        world.State.Map.GetTile(0, 0).AddPopulation(popA);
+        world.State.Map.GetTile(1, 0).AddPopulation(popB);
+
+        world.State.Map.GetTile(0, 0).Resources.Add(AbundantFood());
+        world.State.Map.GetTile(1, 0).Resources.Add(AbundantFood());
+
+        for (var i = 0; i < 10; i++) world.Tick();
+
+        Assert.True(factionA.Relations[factionB].TensionScore <= 0,
+            "moderate-aggression well-fed factions should find peace equilibrium, not escalate to war");
     }
 
     [Fact]
