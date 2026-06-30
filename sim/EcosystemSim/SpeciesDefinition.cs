@@ -19,5 +19,8 @@ public class SpeciesDefinition
     // tendency to escalate tension with nearby factions (0 = passive, 1 = very aggressive)
     public float WarAggression { get; init; } = 0.2f;
 
+    // casualties inflicted per individual per tick during combat
+    public float CombatStrength { get; init; } = 1.0f;
+
     // future traits: TechAffinity, TerritorialRange, HerdInstinct, etc.
 }

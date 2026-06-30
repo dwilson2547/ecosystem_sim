@@ -13,7 +13,8 @@ public static class WorldSeeder
             ReproductionRate = 0.05f,
             StarvationRate = 0.05f,
             MigrationThreshold = 0.75f,
-            WarAggression = 0.3f
+            WarAggression = 0.3f,
+            CombatStrength = 1.4f   // horns — strong individual fighters
         };
 
         var brachiosaurus = new SpeciesDefinition
@@ -23,7 +24,8 @@ public static class WorldSeeder
             ReproductionRate = 0.03f,
             StarvationRate = 0.03f,
             MigrationThreshold = 0.6f,
-            WarAggression = 0.1f  // gentle giants
+            WarAggression = 0.1f,   // gentle giants
+            CombatStrength = 0.6f
         };
 
         var pachycephalosaurus = new SpeciesDefinition
@@ -33,7 +35,8 @@ public static class WorldSeeder
             ReproductionRate = 0.08f,
             StarvationRate = 0.06f,
             MigrationThreshold = 0.5f,
-            WarAggression = 0.5f  // scrappy, territorial
+            WarAggression = 0.5f,   // scrappy, territorial
+            CombatStrength = 0.9f
         };
 
         var world = new World();

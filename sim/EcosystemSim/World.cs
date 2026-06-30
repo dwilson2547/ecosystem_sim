@@ -14,6 +14,7 @@ public class World
         }
 
         Migrate();
+        ResolveCombat();
         UpdateFactionRelations();
         State.Tick++;
     }
@@ -109,6 +110,40 @@ public class World
             else
                 to.AddPopulation(pop);
         }
+    }
+
+    private void ResolveCombat()
+    {
+        foreach (var tile in State.Map.AllTiles())
+            ResolveTileCombat(tile);
+    }
+
+    private static void ResolveTileCombat(Tile tile)
+    {
+        const float CombatRate = 0.02f;
+
+        var pops = tile.Populations.Where(p => p.Count > 0).ToList();
+        if (pops.Count < 2) return;
+
+        // collect all casualties before applying — simultaneous resolution
+        var casualties = new Dictionary<Population, int>();
+
+        foreach (var attacker in pops)
+        {
+            foreach (var defender in pops)
+            {
+                if (attacker == defender) continue;
+                if (attacker.Faction is null || defender.Faction is null) continue;
+                if (!attacker.Faction.Relations.TryGetValue(defender.Faction, out var relation)) continue;
+                if (relation.State != DiplomaticState.AtWar) continue;
+
+                var damage = (int)Math.Ceiling(attacker.Count * attacker.Species.CombatStrength * CombatRate);
+                casualties[defender] = casualties.GetValueOrDefault(defender) + damage;
+            }
+        }
+
+        foreach (var (pop, loss) in casualties)
+            pop.Count = Math.Max(0, pop.Count - loss);
     }
 
     private void UpdateFactionRelations()

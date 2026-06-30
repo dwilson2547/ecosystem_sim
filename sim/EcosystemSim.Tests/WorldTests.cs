@@ -209,6 +209,87 @@ public class WorldTests
         Assert.Empty(neighbor.Populations.Where(p => p.Count > 0));
     }
 
+    private static (Faction, Population) MakeFactionOnTile(World world, string name, int x, int y, int count, float combatStrength = 1f)
+    {
+        var species = new SpeciesDefinition
+        {
+            Name = name,
+            CombatStrength = combatStrength,
+            ReproductionRate = 0f, // isolate combat tests from resource growth/death
+            StarvationRate = 0f
+        };
+        var faction = new Faction { Name = name, PrimarySpecies = species };
+        var pop = new Population { Species = species, Count = count };
+        faction.AddPopulation(pop);
+        world.State.Map.GetTile(x, y).AddPopulation(pop);
+        world.State.Factions.Add(faction);
+        return (faction, pop);
+    }
+
+    private static void DeclareWar(Faction a, Faction b)
+    {
+        a.Relations[b] = new FactionRelation { Other = b, State = DiplomaticState.AtWar, TensionScore = 2f };
+        b.Relations[a] = new FactionRelation { Other = a, State = DiplomaticState.AtWar, TensionScore = 2f };
+    }
+
+    [Fact]
+    public void Tick_PopulationsAtWarTakeMutualCasualties()
+    {
+        var world = new World();
+        var (factionA, popA) = MakeFactionOnTile(world, "A", 0, 0, 100);
+        var (factionB, popB) = MakeFactionOnTile(world, "B", 0, 0, 100);
+        DeclareWar(factionA, factionB);
+
+        world.Tick();
+
+        Assert.True(popA.Count < 100, "faction A should take casualties");
+        Assert.True(popB.Count < 100, "faction B should take casualties");
+    }
+
+    [Fact]
+    public void Tick_CombatIsSimultaneous()
+    {
+        var world = new World();
+        // A is tiny but should still deal damage to B in the same tick it is wiped out
+        var (factionA, popA) = MakeFactionOnTile(world, "A", 0, 0, 1, combatStrength: 10f);
+        var (factionB, popB) = MakeFactionOnTile(world, "B", 0, 0, 1_000, combatStrength: 1f);
+        DeclareWar(factionA, factionB);
+
+        world.Tick();
+
+        Assert.Equal(0, popA.Count);              // A wiped out
+        Assert.True(popB.Count < 1_000, "B should still take damage from A in the same tick");
+    }
+
+    [Fact]
+    public void Tick_NeutralFactionsDoNotFight()
+    {
+        var world = new World();
+        var (_, popA) = MakeFactionOnTile(world, "A", 0, 0, 100);
+        var (_, popB) = MakeFactionOnTile(world, "B", 0, 0, 100);
+        // no war declared — factions are neutral
+
+        world.State.Map.GetTile(0, 0).Resources.Add(AbundantFood());
+        world.Tick();
+
+        Assert.True(popA.Count >= 100, "neutral faction A should not take combat casualties");
+        Assert.True(popB.Count >= 100, "neutral faction B should not take combat casualties");
+    }
+
+    [Fact]
+    public void Tick_PopulationsOnSeparateTilesDoNotFight()
+    {
+        var world = new World();
+        var (factionA, popA) = MakeFactionOnTile(world, "A", 0, 0, 100);
+        var (factionB, popB) = MakeFactionOnTile(world, "B", 1, 0, 100);
+        DeclareWar(factionA, factionB);
+
+        world.Tick();
+
+        Assert.Equal(100, popA.Count);
+        Assert.Equal(100, popB.Count);
+    }
+
     [Fact]
     public void Tick_FactionsInProximityBuildTension()
     {
