@@ -10,4 +10,7 @@ public class FactionRelation
 
     // how many consecutive ticks this pair has been at war (drives ceasefire)
     public int TicksAtWar { get; set; }
+
+    // player-established trade agreement; suspended while AtWar, broken if war starts
+    public bool HasTradeAgreement { get; set; }
 }

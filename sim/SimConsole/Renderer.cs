@@ -39,12 +39,12 @@ public class Renderer
         if (paused)
             Write("  [PAUSED]", ConsoleColor.Yellow);
 
-        WriteLine("  [SPACE] pause  [← →] speed  [D] disease  [Q] quit", ConsoleColor.DarkGray);
+        WriteLine("  [SPACE] pause  [← →] speed  [D] disease  [T] trade  [Q] quit", ConsoleColor.DarkGray);
     }
 
     private void RenderMap(WorldMap map)
     {
-        WriteLine("WORLD MAP  (food: ·=empty  ░=low  ▒=med  ▓=high  █=full | letter=species)");
+        WriteLine("WORLD MAP  (food: ·=empty  ░=low  ▒=med  ▓=high  █=full | letter=species | ■=fertile)");
         Console.Write("╔" + new string('═', map.Width) + "╗");
         Console.WriteLine();
 
@@ -62,6 +62,10 @@ public class Renderer
 
     private void RenderCell(Tile tile)
     {
+        var fertilizer = tile.Byproducts.FirstOrDefault(b => b.Type == EcosystemSim.ByproductType.Fertilizer);
+        if (fertilizer?.Amount > 30f)
+            Console.BackgroundColor = ConsoleColor.DarkGreen;
+
         var dominant = tile.Populations
             .Where(p => p.Count > 0)
             .OrderByDescending(p => p.Count)
@@ -81,6 +85,8 @@ public class Renderer
             var food = tile.Resources.FirstOrDefault(r => r.Type == ResourceType.Food);
             Console.Write(FoodChar(food));
         }
+
+        Console.ResetColor();
     }
 
     private static char FoodChar(ResourcePool? pool)
@@ -98,8 +104,8 @@ public class Renderer
 
     private void RenderPopulations(WorldMap map)
     {
-        WriteLine($"{"SPECIES",-20} {"FACTION",-18} {"TILE",-7} {"COUNT",6}  {"TREND",5}  SAT    DISEASE");
-        WriteLine(new string('─', 80), ConsoleColor.DarkGray);
+        WriteLine($"{"SPECIES",-20} {"FACTION",-18} {"TILE",-7} {"COUNT",6}  {"TREND",5}  SAT   FERT    DISEASE");
+        WriteLine(new string('─', 84), ConsoleColor.DarkGray);
 
         var populations = map.AllPopulations()
             .Where(p => p.Count > 0)
@@ -128,6 +134,13 @@ public class Renderer
             Write($"{pop.Count,6}  ");
             Write($"{trend,5}  ", trendColor);
             Write($"{satisfaction,3}%", satColor);
+
+            var fertAmount = (int)(pop.CurrentTile?.Byproducts
+                .FirstOrDefault(b => b.Type == EcosystemSim.ByproductType.Fertilizer)?.Amount ?? 0f);
+            var fertColor = fertAmount > 60 ? ConsoleColor.Green
+                : fertAmount > 20 ? ConsoleColor.DarkGreen
+                : ConsoleColor.DarkGray;
+            Write($"  {fertAmount,4}", fertColor);
 
             if (pop.Disease is not null)
             {
@@ -176,7 +189,12 @@ public class Renderer
                 var warNote = relation.State == DiplomaticState.AtWar && relation.TicksAtWar > 0
                     ? $"  [{relation.TicksAtWar} ticks at war]"
                     : string.Empty;
-                WriteLine($"  {score:+0.00;-0.00;0.00}{warNote}", scoreColor);
+                Write($"  {score:+0.00;-0.00;0.00}{warNote}", scoreColor);
+
+                if (relation.HasTradeAgreement)
+                    Write("  [TRADE]", ConsoleColor.Cyan);
+
+                Console.WriteLine();
             }
         }
 

@@ -7,8 +7,8 @@ public class ResourcePool
     public float Capacity { get; set; }
     public float RegenPerTick { get; set; }
 
-    public void Regen() =>
-        Amount = Math.Min(Amount + RegenPerTick, Capacity);
+    public void Regen(float bonus = 0f) =>
+        Amount = Math.Min(Amount + RegenPerTick + bonus, Capacity);
 
     public float Consume(float requested)
     {

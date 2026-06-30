@@ -26,5 +26,8 @@ public class SpeciesDefinition
     // scales both mortality reduction and recovery speed
     public float Immunity { get; init; } = 0.3f;
 
+    // byproduct emitted per individual per tick (e.g. Fertilizer from herbivores)
+    public Dictionary<ByproductType, float> ByproductRates { get; init; } = [];
+
     // future traits: TechAffinity, TerritorialRange, HerdInstinct, etc.
 }

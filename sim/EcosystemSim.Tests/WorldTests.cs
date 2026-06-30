@@ -620,4 +620,119 @@ public class WorldTests
         var neighbors = map.GetNeighbors(0, 0).ToList();
         Assert.Equal(2, neighbors.Count);
     }
+
+    // ── Trade & Byproduct tests ─────────────────────────────────────────────
+
+    private static SpeciesDefinition FertiliserSpecies(float rate = 0.1f) =>
+        new() { Name = "Herbivore", ByproductRates = { [ByproductType.Fertilizer] = rate }, ReproductionRate = 0, StarvationRate = 0 };
+
+    [Fact]
+    public void Tick_PopulationProducesFertilizerOnTile()
+    {
+        var world = new World();
+        var tile  = world.State.Map.GetTile(0, 0);
+        var pop   = new Population { Species = FertiliserSpecies(0.1f), Count = 100 };
+        tile.Populations.Add(pop);
+
+        world.Tick();
+
+        var fert = tile.Byproducts.FirstOrDefault(b => b.Type == ByproductType.Fertilizer);
+        Assert.NotNull(fert);
+        Assert.True(fert.Amount > 0, "population should have deposited fertilizer");
+    }
+
+    [Fact]
+    public void Tick_FertilizerBoostsFoodRegen()
+    {
+        var world     = new World();
+        var tileFert  = world.State.Map.GetTile(0, 0);
+        var tilePlain = world.State.Map.GetTile(9, 9);
+
+        const float regen = 10f, cap = 1000f;
+        tileFert .Resources.Add(new ResourcePool { Type = ResourceType.Food, Amount = 0f, Capacity = cap, RegenPerTick = regen });
+        tilePlain.Resources.Add(new ResourcePool { Type = ResourceType.Food, Amount = 0f, Capacity = cap, RegenPerTick = regen });
+
+        // seed fertilizer on the first tile
+        tileFert.GetOrAddByproduct(ByproductType.Fertilizer).Add(100f);
+
+        world.Tick();
+
+        var foodFert  = tileFert .Resources.First(r => r.Type == ResourceType.Food).Amount;
+        var foodPlain = tilePlain.Resources.First(r => r.Type == ResourceType.Food).Amount;
+        Assert.True(foodFert > foodPlain, "tile with fertilizer should regen more food");
+    }
+
+    [Fact]
+    public void Tick_FertilizerDecaysEachTick()
+    {
+        var world = new World();
+        var tile  = world.State.Map.GetTile(0, 0);
+        tile.GetOrAddByproduct(ByproductType.Fertilizer).Add(100f);
+
+        world.Tick();
+
+        var fert = tile.Byproducts.First(b => b.Type == ByproductType.Fertilizer);
+        Assert.True(fert.Amount < 100f, "fertilizer should decay each tick without new production");
+    }
+
+    [Fact]
+    public void Tick_TradingFactionsExchangeFertilizer()
+    {
+        var world = new World();
+        var tileA = world.State.Map.GetTile(0, 0);
+        var tileB = world.State.Map.GetTile(1, 0);
+
+        var species  = FertiliserSpecies(rate: 0f); // no production — we seed it manually
+        var factionA = new Faction { Name = "A", PrimarySpecies = species };
+        var factionB = new Faction { Name = "B", PrimarySpecies = species };
+        world.State.Factions.AddRange([factionA, factionB]);
+
+        var popA = new Population { Species = species, Count = 50 };
+        var popB = new Population { Species = species, Count = 50 };
+        factionA.AddPopulation(popA);
+        factionB.AddPopulation(popB);
+        tileA.AddPopulation(popA);
+        tileB.AddPopulation(popB);
+
+        // give A lots of fertilizer, B has none
+        tileA.GetOrAddByproduct(ByproductType.Fertilizer).Add(100f);
+
+        world.Apply(new EstablishTradeCommand { FactionA = factionA, FactionB = factionB });
+        world.Tick();
+
+        var bFert = tileB.Byproducts.FirstOrDefault(b => b.Type == ByproductType.Fertilizer);
+        Assert.NotNull(bFert);
+        Assert.True(bFert.Amount > 0, "trading partner should receive some fertilizer");
+    }
+
+    [Fact]
+    public void EstablishTradeCommand_SetsAgreementOnBothFactions()
+    {
+        var world   = new World();
+        var species = BasicSpecies();
+        var a = new Faction { Name = "A", PrimarySpecies = species };
+        var b = new Faction { Name = "B", PrimarySpecies = species };
+        world.State.Factions.AddRange([a, b]);
+
+        world.Apply(new EstablishTradeCommand { FactionA = a, FactionB = b });
+
+        Assert.True(a.Relations[b].HasTradeAgreement);
+        Assert.True(b.Relations[a].HasTradeAgreement);
+    }
+
+    [Fact]
+    public void Tick_WarBreaksTradeAgreement()
+    {
+        var world   = new World();
+        var (a, _)  = MakeFactionOnTile(world, "A", 0, 0, 50);
+        var (b, _)  = MakeFactionOnTile(world, "B", 0, 0, 50);
+
+        world.Apply(new EstablishTradeCommand { FactionA = a, FactionB = b });
+        DeclareWar(a, b);
+
+        // tension sync on next tick should detect AtWar and drop the agreement
+        world.Tick();
+
+        Assert.False(a.Relations[b].HasTradeAgreement, "trade agreement should be broken when at war");
+    }
 }

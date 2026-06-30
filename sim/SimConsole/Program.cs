@@ -47,6 +47,19 @@ try
                             TileY = target.Y
                         });
                     break;
+                case ConsoleKey.T:
+                    // toggle trade agreement between Highland Tric and Midland Pachy
+                    var tric  = world.State.Factions.FirstOrDefault(f => f.Name == "Highland Tric");
+                    var pachy = world.State.Factions.FirstOrDefault(f => f.Name == "Midland Pachy");
+                    if (tric is not null && pachy is not null && !tric.IsExtinct && !pachy.IsExtinct)
+                    {
+                        var alreadyTrading = tric.Relations.TryGetValue(pachy, out var rel) && rel.HasTradeAgreement;
+                        if (alreadyTrading)
+                            world.Apply(new EcosystemSim.BreakTradeCommand { FactionA = tric, FactionB = pachy });
+                        else
+                            world.Apply(new EcosystemSim.EstablishTradeCommand { FactionA = tric, FactionB = pachy });
+                    }
+                    break;
             }
         }
 

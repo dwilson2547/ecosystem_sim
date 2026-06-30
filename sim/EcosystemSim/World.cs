@@ -11,21 +11,42 @@ public class World
             RegenerateResources(tile);
             DistributeResources(tile);
             ApplyGrowthAndDeath(tile);
+            ProduceByproducts(tile);
+            DecayByproducts(tile);
         }
 
         Migrate();
         ResolveCombat();
         SpreadDisease();
+        ExecuteTrade();
         UpdateFactionRelations();
         State.Tick++;
     }
 
     public void Apply(IWorldCommand command) => command.Execute(State);
 
+    private const float FertilizerBoost = 0.02f; // food regen bonus per unit of fertilizer on tile
+
     private static void RegenerateResources(Tile tile)
     {
+        var fertilizer = tile.Byproducts.FirstOrDefault(b => b.Type == ByproductType.Fertilizer);
+        var fertBonus  = fertilizer is not null ? fertilizer.Amount * FertilizerBoost : 0f;
+
         foreach (var pool in tile.Resources)
-            pool.Regen();
+            pool.Regen(pool.Type == ResourceType.Food ? fertBonus : 0f);
+    }
+
+    private static void ProduceByproducts(Tile tile)
+    {
+        foreach (var pop in tile.Populations.Where(p => p.Count > 0))
+        foreach (var (byproductType, rate) in pop.Species.ByproductRates)
+            tile.GetOrAddByproduct(byproductType).Add(pop.Count * rate);
+    }
+
+    private static void DecayByproducts(Tile tile)
+    {
+        foreach (var pool in tile.Byproducts)
+            pool.Decay();
     }
 
     private static void DistributeResources(Tile tile)
@@ -178,6 +199,71 @@ public class World
             State.Map.GetNeighbors(tile).SelectMany(n => n.Populations);
     }
 
+    private void ExecuteTrade()
+    {
+        const float ByproductTradeFraction = 0.15f; // fraction of byproduct imbalance transferred per tick
+        const float TradeTensionBonus      = 0.04f; // tension reduction per tick while actively trading
+
+        var seen = new HashSet<(Faction, Faction)>();
+
+        foreach (var faction in State.Factions.Where(f => !f.IsExtinct))
+        {
+            foreach (var (other, relation) in faction.Relations)
+            {
+                if (!relation.HasTradeAgreement) continue;
+                if (relation.State == DiplomaticState.AtWar)  continue;
+                if (seen.Contains((other, faction)))           continue;
+                seen.Add((faction, other));
+
+                var (aTile, bTile) = ClosestTilePair(faction, other);
+                if (aTile is null || bTile is null) continue;
+
+                ExchangeByproducts(aTile, bTile, ByproductTradeFraction);
+
+                // active trade softens diplomatic tension
+                var rel = faction.Relations[other];
+                var newScore = Math.Clamp(rel.TensionScore - TradeTensionBonus, -2f, 2f);
+                SyncRelation(faction, other, newScore);
+            }
+        }
+    }
+
+    private static void ExchangeByproducts(Tile aTile, Tile bTile, float fraction)
+    {
+        // byproducts flow from whichever tile has more toward the other, equalizing gradually
+        var types = aTile.Byproducts.Select(p => p.Type)
+                         .Union(bTile.Byproducts.Select(p => p.Type))
+                         .Distinct();
+
+        foreach (var type in types)
+        {
+            var aPool = aTile.GetOrAddByproduct(type);
+            var bPool = bTile.GetOrAddByproduct(type);
+            var diff  = aPool.Amount - bPool.Amount;
+            if (MathF.Abs(diff) < 0.1f) continue;
+
+            var transfer = diff * fraction;
+            aPool.Amount -= transfer;
+            bPool.Amount += transfer;
+        }
+    }
+
+    private static (Tile? a, Tile? b) ClosestTilePair(Faction a, Faction b)
+    {
+        Tile? bestA = null, bestB = null;
+        var minDist = int.MaxValue;
+
+        foreach (var ap in a.Populations.Where(p => p.Count > 0 && p.CurrentTile is not null))
+        foreach (var bp in b.Populations.Where(p => p.Count > 0 && p.CurrentTile is not null))
+        {
+            var dist = Math.Abs(ap.CurrentTile!.X - bp.CurrentTile!.X)
+                     + Math.Abs(ap.CurrentTile!.Y - bp.CurrentTile!.Y);
+            if (dist < minDist) { minDist = dist; bestA = ap.CurrentTile; bestB = bp.CurrentTile; }
+        }
+
+        return (bestA, bestB);
+    }
+
     private void ResolveCombat()
     {
         foreach (var tile in State.Map.AllTiles())
@@ -293,6 +379,14 @@ public class World
     private static void SyncRelation(Faction a, Faction b, float tensionScore)
     {
         var state = TensionToState(tensionScore);
+
+        // going to war breaks any active trade agreement
+        if (state == DiplomaticState.AtWar)
+        {
+            a.Relations[b].HasTradeAgreement = false;
+            b.Relations[a].HasTradeAgreement = false;
+        }
+
         a.Relations[b].TensionScore = tensionScore;
         a.Relations[b].State        = state;
         b.Relations[a].TensionScore = tensionScore;

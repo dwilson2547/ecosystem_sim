@@ -10,6 +10,7 @@ public static class WorldSeeder
         {
             Name = "Triceratops",
             ConsumptionRates = { [ResourceType.Food] = 2f, [ResourceType.Water] = 1f },
+            ByproductRates   = { [ByproductType.Fertilizer] = 0.08f },
             ReproductionRate = 0.05f,
             StarvationRate = 0.05f,
             MigrationThreshold = 0.75f,
@@ -22,6 +23,7 @@ public static class WorldSeeder
         {
             Name = "Brachiosaurus",
             ConsumptionRates = { [ResourceType.Food] = 5f, [ResourceType.Water] = 2f },
+            ByproductRates   = { [ByproductType.Fertilizer] = 0.20f }, // largest animal, most impactful
             ReproductionRate = 0.03f,
             StarvationRate = 0.03f,
             MigrationThreshold = 0.6f,
@@ -34,6 +36,7 @@ public static class WorldSeeder
         {
             Name = "Pachycephalosaurus",
             ConsumptionRates = { [ResourceType.Food] = 1f },
+            ByproductRates   = { [ByproductType.Fertilizer] = 0.06f },
             ReproductionRate = 0.08f,
             StarvationRate = 0.06f,
             MigrationThreshold = 0.5f,
