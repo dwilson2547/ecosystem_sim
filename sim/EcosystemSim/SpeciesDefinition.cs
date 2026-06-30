@@ -22,5 +22,9 @@ public class SpeciesDefinition
     // casualties inflicted per individual per tick during combat
     public float CombatStrength { get; init; } = 1.0f;
 
+    // resistance to disease (0 = fully susceptible, 1 = immune)
+    // scales both mortality reduction and recovery speed
+    public float Immunity { get; init; } = 0.3f;
+
     // future traits: TechAffinity, TerritorialRange, HerdInstinct, etc.
 }

@@ -14,5 +14,9 @@ public class Population
     // set by Faction.AddPopulation — null means unfactioned (e.g. in tests)
     public Faction? Faction { get; internal set; }
 
+    // active disease and current infection level (0 = healthy, 1 = fully infected)
+    public Disease? Disease { get; set; }
+    public float InfectionLevel { get; set; }
+
     // future state: morale, aggression level, etc.
 }

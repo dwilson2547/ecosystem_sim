@@ -209,6 +209,109 @@ public class WorldTests
         Assert.Empty(neighbor.Populations.Where(p => p.Count > 0));
     }
 
+    private static Disease TestDisease(float mortality = 0.1f, float spread = 0.5f, float recovery = 0.01f) =>
+        new() { Name = "Test Plague", MortalityRate = mortality, SpreadRate = spread, RecoveryRate = recovery };
+
+    [Fact]
+    public void Tick_DiseaseKillsInfectedPopulation()
+    {
+        var world = new World();
+        var tile = world.State.Map.GetTile(0, 0);
+        var species = new SpeciesDefinition { Name = "Victim", Immunity = 0f, ReproductionRate = 0, StarvationRate = 0 };
+        var pop = new Population { Species = species, Count = 100, Disease = TestDisease(mortality: 0.1f), InfectionLevel = 1f };
+        tile.Populations.Add(pop);
+
+        world.Tick();
+
+        Assert.True(pop.Count < 100, "fully infected population with 0 immunity should lose members to disease");
+    }
+
+    [Fact]
+    public void Tick_DiseaseSpreadsToSameTilePopulation()
+    {
+        var world = new World();
+        var tile = world.State.Map.GetTile(0, 0);
+        var species = new SpeciesDefinition { Name = "Spreader", Immunity = 0f, ReproductionRate = 0, StarvationRate = 0 };
+        var disease = TestDisease(spread: 0.5f);
+
+        var infected = new Population { Species = species, Count = 50, Disease = disease, InfectionLevel = 1f };
+        var healthy  = new Population { Species = species, Count = 50 };
+        tile.Populations.AddRange([infected, healthy]);
+
+        world.Tick();
+
+        Assert.NotNull(healthy.Disease);
+        Assert.True(healthy.InfectionLevel > 0, "healthy population on same tile should catch disease");
+    }
+
+    [Fact]
+    public void Tick_DiseaseSpreadsToAdjacentTile()
+    {
+        var world = new World();
+        var sourceTile = world.State.Map.GetTile(0, 0);
+        var targetTile = world.State.Map.GetTile(1, 0);
+        var species = new SpeciesDefinition { Name = "Spreader", Immunity = 0f, ReproductionRate = 0, StarvationRate = 0 };
+        var disease = TestDisease(spread: 1.0f);
+
+        var infected = new Population { Species = species, Count = 100, Disease = disease, InfectionLevel = 1f };
+        var healthy  = new Population { Species = species, Count = 50 };
+        sourceTile.AddPopulation(infected);
+        targetTile.AddPopulation(healthy);
+
+        world.Tick();
+
+        Assert.True(healthy.InfectionLevel > 0, "disease should seep to adjacent tile populations");
+    }
+
+    [Fact]
+    public void Tick_HighImmunityReducesDiseaseDeaths()
+    {
+        var world = new World();
+        var tile = world.State.Map.GetTile(0, 0);
+        var disease = TestDisease(mortality: 0.2f);
+
+        var vulnerable = new Population { Species = new SpeciesDefinition { Name = "V", Immunity = 0f,   ReproductionRate = 0, StarvationRate = 0 }, Count = 100, Disease = disease, InfectionLevel = 1f };
+        var resistant  = new Population { Species = new SpeciesDefinition { Name = "R", Immunity = 0.9f, ReproductionRate = 0, StarvationRate = 0 }, Count = 100, Disease = disease, InfectionLevel = 1f };
+        tile.Populations.AddRange([vulnerable, resistant]);
+
+        world.Tick();
+
+        Assert.True(resistant.Count > vulnerable.Count, "high immunity species should lose fewer individuals to disease");
+    }
+
+    [Fact]
+    public void Tick_PopulationRecoversFromDiseaseWithHighImmunity()
+    {
+        var world = new World();
+        var tile = world.State.Map.GetTile(0, 0);
+        var species = new SpeciesDefinition { Name = "Hardy", Immunity = 1f, ReproductionRate = 0, StarvationRate = 0 };
+        var disease = TestDisease(spread: 0f, recovery: 0.01f); // no spread, just recovery
+        var pop = new Population { Species = species, Count = 100, Disease = disease, InfectionLevel = 0.1f };
+        tile.Populations.Add(pop);
+
+        // recovery per tick = RecoveryRate + Immunity * 0.05 = 0.01 + 0.05 = 0.06; run until clear
+        for (var i = 0; i < 10 && pop.Disease is not null; i++)
+            world.Tick();
+
+        Assert.Null(pop.Disease);
+        Assert.Equal(0f, pop.InfectionLevel);
+    }
+
+    [Fact]
+    public void TriggerDiseaseCommand_InfectsPopulationsOnTile()
+    {
+        var world = new World();
+        var tile = world.State.Map.GetTile(3, 3);
+        var species = new SpeciesDefinition { Name = "Target", ReproductionRate = 0, StarvationRate = 0 };
+        tile.Populations.Add(new Population { Species = species, Count = 50 });
+
+        var disease = TestDisease();
+        world.Apply(new TriggerDiseaseCommand { Disease = disease, TileX = 3, TileY = 3 });
+
+        Assert.Same(disease, tile.Populations[0].Disease);
+        Assert.True(tile.Populations[0].InfectionLevel > 0);
+    }
+
     private static (Faction, Population) MakeFactionOnTile(World world, string name, int x, int y, int count, float combatStrength = 1f)
     {
         var species = new SpeciesDefinition

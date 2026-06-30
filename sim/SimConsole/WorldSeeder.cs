@@ -14,7 +14,8 @@ public static class WorldSeeder
             StarvationRate = 0.05f,
             MigrationThreshold = 0.75f,
             WarAggression = 0.3f,
-            CombatStrength = 1.4f   // horns — strong individual fighters
+            CombatStrength = 1.4f,
+            Immunity = 0.3f
         };
 
         var brachiosaurus = new SpeciesDefinition
@@ -24,8 +25,9 @@ public static class WorldSeeder
             ReproductionRate = 0.03f,
             StarvationRate = 0.03f,
             MigrationThreshold = 0.6f,
-            WarAggression = 0.1f,   // gentle giants
-            CombatStrength = 0.6f
+            WarAggression = 0.1f,
+            CombatStrength = 0.6f,
+            Immunity = 0.15f  // large, slow immune response — very vulnerable
         };
 
         var pachycephalosaurus = new SpeciesDefinition
@@ -35,8 +37,9 @@ public static class WorldSeeder
             ReproductionRate = 0.08f,
             StarvationRate = 0.06f,
             MigrationThreshold = 0.5f,
-            WarAggression = 0.5f,   // scrappy, territorial
-            CombatStrength = 0.9f
+            WarAggression = 0.5f,
+            CombatStrength = 0.9f,
+            Immunity = 0.55f  // scrappy and resilient
         };
 
         var world = new World();
@@ -98,4 +101,12 @@ public static class WorldSeeder
 
         return world;
     }
+
+    public static readonly Disease DinoFever = new()
+    {
+        Name = "Dino Fever",
+        MortalityRate = 0.04f,
+        SpreadRate = 0.18f,
+        RecoveryRate = 0.015f
+    };
 }

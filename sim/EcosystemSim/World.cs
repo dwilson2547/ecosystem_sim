@@ -15,6 +15,7 @@ public class World
 
         Migrate();
         ResolveCombat();
+        SpreadDisease();
         UpdateFactionRelations();
         State.Tick++;
     }
@@ -110,6 +111,71 @@ public class World
             else
                 to.AddPopulation(pop);
         }
+    }
+
+    private void SpreadDisease()
+    {
+        const float AdjacentSpreadFactor = 0.3f; // disease seeps across tile borders much slower
+
+        // phase 1: calculate exposures without modifying state
+        var exposures = new Dictionary<Population, (Disease disease, float amount)>();
+
+        foreach (var tile in State.Map.AllTiles())
+        {
+            foreach (var source in tile.Populations.Where(p => p.Count > 0 && p.Disease is not null && p.InfectionLevel > 0))
+            {
+                var disease      = source.Disease!;
+                var densityBonus = 1f + source.Count / 500f; // denser populations spread faster
+
+                Expose(disease, source, tile.Populations,          source.InfectionLevel * disease.SpreadRate * densityBonus);
+                Expose(disease, source, NeighborPops(tile), source.InfectionLevel * disease.SpreadRate * AdjacentSpreadFactor);
+            }
+        }
+
+        // phase 2: apply exposures
+        foreach (var (pop, (disease, amount)) in exposures)
+        {
+            pop.Disease        = disease;
+            pop.InfectionLevel = Math.Min(1f, pop.InfectionLevel + amount);
+        }
+
+        // phase 3: mortality then recovery for all infected populations
+        foreach (var pop in State.Map.AllPopulations().Where(p => p.Count > 0 && p.Disease is not null))
+        {
+            var disease  = pop.Disease!;
+            var immunity = pop.Species.Immunity;
+
+            var deaths = (int)Math.Ceiling(pop.Count * pop.InfectionLevel * disease.MortalityRate * (1f - immunity));
+            pop.Count = Math.Max(0, pop.Count - deaths);
+
+            var recovery   = disease.RecoveryRate + immunity * 0.05f;
+            pop.InfectionLevel = Math.Max(0f, pop.InfectionLevel - recovery);
+
+            if (pop.InfectionLevel <= 0f)
+                pop.Disease = null;
+        }
+
+        return;
+
+        void Expose(Disease disease, Population source, IEnumerable<Population> targets, float baseAmount)
+        {
+            foreach (var target in targets)
+            {
+                if (target == source || target.Count == 0) continue;
+                if (target.Disease is not null && target.Disease != disease) continue;
+
+                var amount = baseAmount * (1f - target.Species.Immunity);
+                if (amount <= 0) continue;
+
+                if (exposures.TryGetValue(target, out var existing))
+                    exposures[target] = (disease, existing.amount + amount);
+                else
+                    exposures[target] = (disease, amount);
+            }
+        }
+
+        IEnumerable<Population> NeighborPops(Tile tile) =>
+            State.Map.GetNeighbors(tile).SelectMany(n => n.Populations);
     }
 
     private void ResolveCombat()

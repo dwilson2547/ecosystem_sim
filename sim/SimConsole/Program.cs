@@ -34,6 +34,19 @@ try
                 case ConsoleKey.LeftArrow or ConsoleKey.Subtract or ConsoleKey.OemMinus:
                     speedIndex = Math.Max(speedIndex - 1, 0);
                     break;
+                case ConsoleKey.D:
+                    // trigger disease outbreak on the most populous tile
+                    var target = world.State.Map.AllTiles()
+                        .OrderByDescending(t => t.Populations.Sum(p => p.Count))
+                        .FirstOrDefault();
+                    if (target is not null)
+                        world.Apply(new EcosystemSim.TriggerDiseaseCommand
+                        {
+                            Disease = WorldSeeder.DinoFever,
+                            TileX = target.X,
+                            TileY = target.Y
+                        });
+                    break;
             }
         }
 

@@ -39,7 +39,7 @@ public class Renderer
         if (paused)
             Write("  [PAUSED]", ConsoleColor.Yellow);
 
-        WriteLine("  [SPACE] pause  [← →] speed  [Q] quit", ConsoleColor.DarkGray);
+        WriteLine("  [SPACE] pause  [← →] speed  [D] disease  [Q] quit", ConsoleColor.DarkGray);
     }
 
     private void RenderMap(WorldMap map)
@@ -69,7 +69,10 @@ public class Renderer
 
         if (dominant is not null)
         {
-            Console.ForegroundColor = GetColor(dominant.Species);
+            // infected populations render in dark red regardless of species color
+            Console.ForegroundColor = dominant.Disease is not null
+                ? ConsoleColor.DarkRed
+                : GetColor(dominant.Species);
             Console.Write(dominant.Species.Name[0]);
         }
         else
@@ -95,8 +98,8 @@ public class Renderer
 
     private void RenderPopulations(WorldMap map)
     {
-        WriteLine($"{"SPECIES",-20} {"FACTION",-18} {"TILE",-7} {"COUNT",6}  {"TREND",5}  SAT");
-        WriteLine(new string('─', 68), ConsoleColor.DarkGray);
+        WriteLine($"{"SPECIES",-20} {"FACTION",-18} {"TILE",-7} {"COUNT",6}  {"TREND",5}  SAT    DISEASE");
+        WriteLine(new string('─', 80), ConsoleColor.DarkGray);
 
         var populations = map.AllPopulations()
             .Where(p => p.Count > 0)
@@ -124,7 +127,15 @@ public class Renderer
             Write($" ({tile.X},{tile.Y})  ");
             Write($"{pop.Count,6}  ");
             Write($"{trend,5}  ", trendColor);
-            WriteLine($"{satisfaction,3}%", satColor);
+            Write($"{satisfaction,3}%", satColor);
+
+            if (pop.Disease is not null)
+            {
+                var pct = (int)(pop.InfectionLevel * 100);
+                Write($"  [{pop.Disease.Name} {pct}%]", ConsoleColor.DarkRed);
+            }
+
+            Console.WriteLine();
         }
     }
 
