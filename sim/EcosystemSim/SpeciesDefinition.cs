@@ -4,6 +4,12 @@ public class SpeciesDefinition
 {
     public required string Name { get; init; }
 
+    // ancestor species name, shared across all derived species; null means use Name
+    public string? RootName { get; init; }
+
+    // the root of the lineage, used for naming derived species
+    public string EffectiveRootName => RootName ?? Name;
+
     // resource consumed per individual per tick — add new ResourceType values to extend
     public Dictionary<ResourceType, float> ConsumptionRates { get; init; } = [];
 

@@ -332,6 +332,28 @@ ImmunityDelta never decreases — immunity gained through disease survival is pe
 
 ---
 
+## Speciation
+
+> Full mechanics in **`docs/speciation.md`**. Summary below.
+
+Runs in `ApplySpeciation()` after `ApplyEvolution()` each tick. Evaluates every living population:
+
+- `SizeIndex >= 1.5` → forks to "Greater [Root]" (then "Giant" on a second crossing)
+- `SizeIndex <= 0.65` → forks to "Lesser [Root]" (then "Dwarf")
+
+When speciation fires, `CreateDerivedSpecies()` builds a new `SpeciesDefinition` with traits
+baked in at the evolved size (food consumption `× sizeIndex`, combat `× √sizeIndex`, reproduction
+`÷ √sizeIndex`, byproducts `× sizeIndex`, immunity `+ ImmunityDelta`). The population then resets
+to `SizeIndex = 1.0` with pressure accumulators zeroed.
+
+Two populations speciating to the same name in the same tick share one definition (via
+`FindSpecies()` scan before creating a new one).
+
+`SpeciesDefinition.RootName` anchors the lineage name. Must be set explicitly in WorldSeeder for
+base species; propagated automatically to derived species.
+
+---
+
 ## Player commands
 
 All implement `IWorldCommand` with a single `Execute(WorldState)` method.

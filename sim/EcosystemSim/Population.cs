@@ -2,7 +2,7 @@ namespace EcosystemSim;
 
 public class Population
 {
-    public required SpeciesDefinition Species { get; init; }
+    public required SpeciesDefinition Species { get; set; }
     public int Count { get; set; }
 
     // worst resource satisfaction seen this tick (0–1), reset each tick

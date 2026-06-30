@@ -9,6 +9,7 @@ public static class WorldSeeder
         var triceratops = new SpeciesDefinition
         {
             Name = "Triceratops",
+            RootName = "Triceratops",
             ConsumptionRates = { [ResourceType.Food] = 2f, [ResourceType.Water] = 1f },
             ByproductRates   = { [ByproductType.Fertilizer] = 0.08f },
             ReproductionRate = 0.05f,
@@ -22,6 +23,7 @@ public static class WorldSeeder
         var brachiosaurus = new SpeciesDefinition
         {
             Name = "Brachiosaurus",
+            RootName = "Brachiosaurus",
             ConsumptionRates = { [ResourceType.Food] = 5f, [ResourceType.Water] = 2f },
             ByproductRates   = { [ByproductType.Fertilizer] = 0.20f },
             ReproductionRate = 0.03f,
@@ -35,6 +37,7 @@ public static class WorldSeeder
         var pachycephalosaurus = new SpeciesDefinition
         {
             Name = "Pachycephalosaurus",
+            RootName = "Pachycephalosaurus",
             ConsumptionRates = { [ResourceType.Food] = 1f },
             ByproductRates   = { [ByproductType.Fertilizer] = 0.06f },
             ReproductionRate = 0.08f,

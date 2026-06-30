@@ -945,6 +945,122 @@ public class WorldTests
             "population with gained ImmunityDelta should lose fewer individuals to disease");
     }
 
+    // ── Speciation tests ──────────────────────────────────────────────────────
+
+    private static SpeciesDefinition BaseSpecies(string name = "TestDino") => new()
+    {
+        Name = name,
+        RootName = name,
+        ConsumptionRates = { [ResourceType.Food] = 2f },
+        CombatStrength = 1.0f,
+        Immunity = 0.2f,
+        ByproductRates = { [ByproductType.Fertilizer] = 0.1f },
+        ReproductionRate = 0.05f,
+        StarvationRate = 0.05f,
+    };
+
+    [Fact]
+    public void Tick_PopulationSpeciatesWhenSizeIndexExceedsLargeThreshold()
+    {
+        var world = new World();
+        var tile  = world.State.Map.GetTile(0, 0);
+        tile.Resources.Add(AbundantFood());
+
+        var pop = new Population { Species = BaseSpecies(), Count = 50, SizeIndex = World.SpeciationLargeThreshold };
+        tile.Populations.Add(pop);
+
+        world.Tick();
+
+        Assert.Equal("Greater TestDino", pop.Species.Name);
+        Assert.Equal(1.0f, pop.SizeIndex);
+        Assert.Equal(0f, pop.SizePressure);
+    }
+
+    [Fact]
+    public void Tick_PopulationSpeciatesWhenSizeIndexDropsBelowSmallThreshold()
+    {
+        var world = new World();
+        var tile  = world.State.Map.GetTile(0, 0);
+        tile.Resources.Add(AbundantFood());
+
+        var pop = new Population { Species = BaseSpecies(), Count = 50, SizeIndex = World.SpeciationSmallThreshold };
+        tile.Populations.Add(pop);
+
+        world.Tick();
+
+        Assert.Equal("Lesser TestDino", pop.Species.Name);
+        Assert.Equal(1.0f, pop.SizeIndex);
+    }
+
+    [Fact]
+    public void Tick_SpeciatedSpeciesHasBakedInTraits()
+    {
+        var world = new World();
+        var tile  = world.State.Map.GetTile(0, 0);
+        tile.Resources.Add(AbundantFood());
+
+        var parent = BaseSpecies();
+        var pop = new Population { Species = parent, Count = 50, SizeIndex = World.SpeciationLargeThreshold };
+        tile.Populations.Add(pop);
+
+        world.Tick();
+
+        // food consumption should be baked in at parent × sizeIndex
+        var expectedFood = parent.ConsumptionRates[ResourceType.Food] * World.SpeciationLargeThreshold;
+        Assert.Equal(expectedFood, pop.Species.ConsumptionRates[ResourceType.Food], precision: 3);
+
+        // combat strength baked in at parent × sqrt(sizeIndex)
+        var expectedCombat = parent.CombatStrength * MathF.Sqrt(World.SpeciationLargeThreshold);
+        Assert.Equal(expectedCombat, pop.Species.CombatStrength, precision: 3);
+    }
+
+    [Fact]
+    public void Tick_SecondSpeciationCreatesGiantFromGreater()
+    {
+        var world = new World();
+        var tile  = world.State.Map.GetTile(0, 0);
+        tile.Resources.Add(AbundantFood());
+
+        var greater = new SpeciesDefinition
+        {
+            Name = "Greater TestDino",
+            RootName = "TestDino",
+            ConsumptionRates = { [ResourceType.Food] = 3f },
+            CombatStrength = 1.2f,
+            Immunity = 0.2f,
+            ReproductionRate = 0.04f,
+            StarvationRate = 0.05f,
+        };
+
+        var pop = new Population { Species = greater, Count = 50, SizeIndex = World.SpeciationLargeThreshold };
+        tile.Populations.Add(pop);
+
+        world.Tick();
+
+        Assert.Equal("Giant TestDino", pop.Species.Name);
+    }
+
+    [Fact]
+    public void Tick_TwoPopulationsSpeciatingToSameNameShareSpecies()
+    {
+        var world = new World();
+        var tileA = world.State.Map.GetTile(0, 0);
+        var tileB = world.State.Map.GetTile(9, 9);
+        tileA.Resources.Add(AbundantFood());
+        tileB.Resources.Add(AbundantFood());
+
+        var popA = new Population { Species = BaseSpecies(), Count = 50, SizeIndex = World.SpeciationLargeThreshold };
+        var popB = new Population { Species = BaseSpecies(), Count = 30, SizeIndex = World.SpeciationLargeThreshold };
+        tileA.Populations.Add(popA);
+        tileB.Populations.Add(popB);
+
+        world.Tick();
+
+        Assert.Equal("Greater TestDino", popA.Species.Name);
+        Assert.Equal("Greater TestDino", popB.Species.Name);
+        Assert.Same(popA.Species, popB.Species); // same object — shared definition
+    }
+
     // ── Season tests ─────────────────────────────────────────────────────────
 
     [Fact]

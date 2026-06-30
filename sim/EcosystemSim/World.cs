@@ -21,6 +21,7 @@ public class World
         ExecuteTrade();
         UpdateFactionRelations();
         ApplyEvolution();
+        ApplySpeciation();
         State.Tick++;
         AdvanceSeason();
     }
@@ -379,6 +380,81 @@ public class World
             }
         }
     }
+
+    public const float SpeciationLargeThreshold = 1.5f;
+    public const float SpeciationSmallThreshold = 0.65f;
+
+    private void ApplySpeciation()
+    {
+        foreach (var pop in State.Map.AllPopulations())
+        {
+            if (pop.Count == 0) continue;
+            if (pop.SizeIndex < SpeciationLargeThreshold && pop.SizeIndex > SpeciationSmallThreshold) continue;
+
+            var derivedName = DeriveSpeciesName(pop.Species, pop.SizeIndex);
+            if (derivedName == pop.Species.Name) continue; // already at this naming cap
+
+            var newSpecies = FindSpecies(derivedName)
+                ?? CreateDerivedSpecies(pop.Species, derivedName, pop.SizeIndex, pop.ImmunityDelta);
+
+            pop.Species        = newSpecies;
+            pop.SizeIndex      = 1.0f;
+            pop.SizePressure   = 0f;
+            pop.ImmunityDelta  = 0f;
+            pop.ImmunityPressure = 0f;
+        }
+    }
+
+    private static string DeriveSpeciesName(SpeciesDefinition parent, float sizeIndex)
+    {
+        var root = parent.EffectiveRootName;
+
+        if (sizeIndex >= SpeciationLargeThreshold)
+        {
+            if (parent.Name == $"Giant {root}")   return $"Giant {root}";   // cap
+            if (parent.Name == $"Greater {root}") return $"Giant {root}";
+            return $"Greater {root}";
+        }
+        else
+        {
+            if (parent.Name == $"Dwarf {root}")  return $"Dwarf {root}";    // cap
+            if (parent.Name == $"Lesser {root}") return $"Dwarf {root}";
+            return $"Lesser {root}";
+        }
+    }
+
+    private static SpeciesDefinition CreateDerivedSpecies(
+        SpeciesDefinition parent, string name, float sizeIndex, float immunityDelta)
+    {
+        // bake the evolved size into the new species baseline so traits are continuous
+        // across speciation (effective values at moment of split == effective values right after)
+        var newConsumption = parent.ConsumptionRates.ToDictionary(
+            kv => kv.Key,
+            kv => kv.Key == ResourceType.Food ? kv.Value * sizeIndex : kv.Value);
+
+        var newByproducts = parent.ByproductRates
+            .ToDictionary(kv => kv.Key, kv => kv.Value * sizeIndex);
+
+        return new SpeciesDefinition
+        {
+            Name             = name,
+            RootName         = parent.EffectiveRootName,
+            ConsumptionRates = newConsumption,
+            ByproductRates   = newByproducts,
+            CombatStrength   = parent.CombatStrength   * MathF.Sqrt(sizeIndex),
+            ReproductionRate = parent.ReproductionRate / MathF.Sqrt(sizeIndex), // larger → slower repro
+            StarvationRate   = parent.StarvationRate,
+            MigrationThreshold = parent.MigrationThreshold,
+            WarAggression    = parent.WarAggression,
+            Immunity         = MathF.Min(1f, parent.Immunity + immunityDelta),
+        };
+    }
+
+    // find an existing species by name across all live populations
+    private SpeciesDefinition? FindSpecies(string name) =>
+        State.Map.AllPopulations()
+             .Select(p => p.Species)
+             .FirstOrDefault(s => s.Name == name);
 
     private void UpdateFactionRelations()
     {

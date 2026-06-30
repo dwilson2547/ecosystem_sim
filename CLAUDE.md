@@ -121,11 +121,19 @@ attacker_count × combat_strength × 0.02/tick for every at-war pair on the same
 
 ### 10. Evolution
 Two pressure accumulators, not per-tick change:
+
 - **Size**: +1/tick when well-fed (sat≥0.9), −1/tick when starving (sat<0.5). At ±50 ticks
   accumulated, SizeIndex shifts ±0.05 (range [0.5, 2.0]). Larger = more food demand + more
   combat strength. `EffectiveCombatStrength = CombatStrength × √SizeIndex`.
 - **Immunity**: +1/tick while infected (InfectionLevel > 0.1). At 30 ticks, ImmunityDelta
   gains 0.02 (max 0.5 permanent gain). `EffectiveImmunity = min(1, BaseImmunity + ImmunityDelta)`.
+
+### 11. Speciation
+When `SizeIndex >= 1.5` (large) or `<= 0.65` (small), the population diverges into a new species.
+A derived `SpeciesDefinition` is created with traits baked in at the evolved size (food demand,
+combat strength, byproduct output, reproduction rate all scale). `SizeIndex` resets to 1.0 on the
+new baseline. Naming tiers: base → Greater/Lesser → Giant/Dwarf. If two populations independently
+reach the same tier, they share one definition. See **`docs/speciation.md`** for full mechanics.
 
 ---
 
@@ -145,7 +153,8 @@ Global:
 9. `ExecuteTrade` — byproduct equalization + tension bonus
 10. `UpdateFactionRelations` — tension delta, state transitions
 11. `ApplyEvolution` — pressure accumulators + threshold crossings
-12. `State.Tick++`, `AdvanceSeason()`
+12. `ApplySpeciation` — fork populations that crossed size thresholds into derived species
+13. `State.Tick++`, `AdvanceSeason()`
 
 ---
 
@@ -185,7 +194,8 @@ what it needs on specific tiles. Key helpers in `WorldTests.cs`:
 
 ## What's next
 
-1. **Speciation** — SizeIndex diverging far enough forks a population into a new species
+1. **Food type diversity** — distinct food subtypes (browse, graze, fruit) with per-terrain
+   availability and per-species preferences; will get its own doc (`docs/food-types.md`)
 2. **Godot/Unity frontend** — the engine library is designed to be UI-agnostic; the frontend
    drives it by calling `world.Tick()` and `world.Apply(command)` on its own schedule
 3. **Player interventions** — meteor strike, terraforming, population seeding mid-run
