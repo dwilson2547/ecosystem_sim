@@ -13,6 +13,7 @@ public class World
             ApplyGrowthAndDeath(tile);
         }
 
+        Migrate();
         State.Tick++;
     }
 
@@ -71,5 +72,71 @@ public class World
                 pop.Count = Math.Max(0, pop.Count - deaths);
             }
         }
+    }
+
+    private void Migrate()
+    {
+        // collect moves first so relocations don't affect each other within the same tick
+        var moves = new List<(Population pop, Tile from, Tile to)>();
+
+        foreach (var tile in State.Map.AllTiles())
+        {
+            foreach (var pop in tile.Populations)
+            {
+                if (pop.Count == 0) continue;
+                if (pop.LastSatisfaction >= pop.Species.MigrationThreshold) continue;
+
+                var lacking = MostLackingResource(pop, tile);
+                if (lacking is null) continue;
+
+                var destination = BestNeighborFor(tile, lacking.Value);
+                if (destination is not null)
+                    moves.Add((pop, tile, destination));
+            }
+        }
+
+        foreach (var (pop, from, to) in moves)
+        {
+            from.Populations.Remove(pop);
+
+            var existing = to.Populations.FirstOrDefault(p => p.Species == pop.Species);
+            if (existing is not null)
+                existing.Count += pop.Count;
+            else
+                to.Populations.Add(pop);
+        }
+    }
+
+    // returns the resource type the population is most starved of on this tile
+    private static ResourceType? MostLackingResource(Population pop, Tile tile)
+    {
+        ResourceType? worst = null;
+        var worstRatio = float.MaxValue;
+
+        foreach (var (resourceType, rate) in pop.Species.ConsumptionRates)
+        {
+            if (rate == 0) continue;
+            var pool = tile.Resources.FirstOrDefault(r => r.Type == resourceType);
+            var ratio = pool is null ? 0f : pool.Amount / (pop.Count * rate);
+            if (ratio < worstRatio)
+            {
+                worstRatio = ratio;
+                worst = resourceType;
+            }
+        }
+
+        return worst;
+    }
+
+    // returns the neighboring tile with the most of the given resource, or null if no neighbor is better
+    private Tile? BestNeighborFor(Tile current, ResourceType resourceType)
+    {
+        var currentAmount = current.Resources
+            .FirstOrDefault(r => r.Type == resourceType)?.Amount ?? 0f;
+
+        return State.Map.GetNeighbors(current)
+            .Where(n => (n.Resources.FirstOrDefault(r => r.Type == resourceType)?.Amount ?? 0f) > currentAmount)
+            .OrderByDescending(n => n.Resources.FirstOrDefault(r => r.Type == resourceType)?.Amount ?? 0f)
+            .FirstOrDefault();
     }
 }

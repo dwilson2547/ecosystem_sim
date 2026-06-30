@@ -142,6 +142,74 @@ public class WorldTests
     }
 
     [Fact]
+    public void Tick_PopulationMigratesWhenResourceMissing()
+    {
+        var world = new World();
+        var dryTile = world.State.Map.GetTile(0, 0); // no water
+        var wetTile = world.State.Map.GetTile(1, 0); // has water
+
+        var species = new SpeciesDefinition
+        {
+            Name = "WaterSeeker",
+            ConsumptionRates = { [ResourceType.Water] = 1f },
+            MigrationThreshold = 0.9f,
+            StarvationRate = 0.01f // low so population survives long enough to migrate
+        };
+
+        wetTile.Resources.Add(new ResourcePool { Type = ResourceType.Water, Amount = 1_000f, Capacity = 1_000f, RegenPerTick = 50f });
+        dryTile.Populations.Add(new Population { Species = species, Count = 10 });
+
+        world.Tick();
+
+        Assert.Empty(dryTile.Populations.Where(p => p.Count > 0));
+        Assert.Single(wetTile.Populations.Where(p => p.Count > 0));
+    }
+
+    [Fact]
+    public void Tick_MigratingPopulationMergesWithSameSpeciesOnDestination()
+    {
+        var world = new World();
+        var dryTile = world.State.Map.GetTile(0, 0);
+        var wetTile = world.State.Map.GetTile(1, 0);
+
+        var species = new SpeciesDefinition
+        {
+            Name = "Merger",
+            ConsumptionRates = { [ResourceType.Water] = 1f },
+            MigrationThreshold = 0.9f,
+            StarvationRate = 0.01f
+        };
+
+        wetTile.Resources.Add(new ResourcePool { Type = ResourceType.Water, Amount = 1_000f, Capacity = 1_000f, RegenPerTick = 50f });
+        dryTile.Populations.Add(new Population { Species = species, Count = 10 });
+        wetTile.Populations.Add(new Population { Species = species, Count = 20 });
+
+        world.Tick();
+
+        // dry tile should be empty, wet tile should have exactly one merged population
+        Assert.Empty(dryTile.Populations.Where(p => p.Count > 0));
+        Assert.Single(wetTile.Populations.Where(p => p.Count > 0));
+        Assert.True(wetTile.Populations.Single(p => p.Count > 0).Count > 20, "merged count should exceed the destination's original count");
+    }
+
+    [Fact]
+    public void Tick_PopulationDoesNotMigrateWhenSatisfied()
+    {
+        var world = new World();
+        var tile = world.State.Map.GetTile(0, 0);
+        var neighbor = world.State.Map.GetTile(1, 0);
+
+        tile.Resources.Add(AbundantFood());
+        neighbor.Resources.Add(AbundantFood());
+        tile.Populations.Add(new Population { Species = BasicSpecies(), Count = 10 });
+
+        world.Tick();
+
+        Assert.Single(tile.Populations.Where(p => p.Count > 0));
+        Assert.Empty(neighbor.Populations.Where(p => p.Count > 0));
+    }
+
+    [Fact]
     public void Map_NeighborsAreCardinalOnly()
     {
         var map = new WorldMap(3, 3);
