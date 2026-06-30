@@ -1,3 +1,5 @@
+using Xunit;
+
 namespace EcosystemSim.Tests;
 
 public class WorldTests
