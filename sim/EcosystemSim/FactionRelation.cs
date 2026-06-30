@@ -7,4 +7,7 @@ public class FactionRelation
 
     // positive = tension building toward war, negative = cooperation building toward alliance
     public float TensionScore { get; set; }
+
+    // how many consecutive ticks this pair has been at war (drives ceasefire)
+    public int TicksAtWar { get; set; }
 }

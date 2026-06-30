@@ -382,6 +382,123 @@ public class WorldTests
     }
 
     [Fact]
+    public void Tick_TensionDecaysWhenFactionsOutOfRange()
+    {
+        var world = new World();
+        var (factionA, _) = MakeFactionOnTile(world, "A", 0, 0, 50);
+        var (factionB, _) = MakeFactionOnTile(world, "B", 9, 9, 50);
+
+        // seed with high tension manually
+        DeclareWar(factionA, factionB);
+        Assert.Equal(DiplomaticState.AtWar, factionA.Relations[factionB].State);
+
+        // populations are 18 tiles apart (> ProximityRange of 5), so tension should decay
+        world.Tick();
+        world.Tick();
+        world.Tick();
+
+        Assert.True(factionA.Relations[factionB].TensionScore < 2f, "tension should decay when out of range");
+    }
+
+    [Fact]
+    public void Tick_WarEndsAfterSustainedConflict()
+    {
+        var world = new World();
+        var (factionA, _) = MakeFactionOnTile(world, "A", 0, 0, 100);
+        var (factionB, _) = MakeFactionOnTile(world, "B", 9, 9, 100);
+
+        DeclareWar(factionA, factionB);
+
+        // run long enough for ceasefire pressure (25 ticks) plus decay to kick in
+        // populations are far apart so decay drives tension down
+        for (var i = 0; i < 50; i++)
+            world.Tick();
+
+        Assert.NotEqual(DiplomaticState.AtWar, factionA.Relations[factionB].State);
+    }
+
+    [Fact]
+    public void Tick_ComplementarySpeciesDeEscalate()
+    {
+        var world = new World();
+
+        // species A eats only food, species B eats only water — no competition
+        var speciesA = new SpeciesDefinition { Name = "A", ConsumptionRates = { [ResourceType.Food] = 1f }, WarAggression = 0.1f, ReproductionRate = 0, StarvationRate = 0 };
+        var speciesB = new SpeciesDefinition { Name = "B", ConsumptionRates = { [ResourceType.Water] = 1f }, WarAggression = 0.1f, ReproductionRate = 0, StarvationRate = 0 };
+
+        var factionA = new Faction { Name = "A", PrimarySpecies = speciesA };
+        var factionB = new Faction { Name = "B", PrimarySpecies = speciesB };
+        world.State.Factions.AddRange([factionA, factionB]);
+
+        var popA = new Population { Species = speciesA, Count = 10 };
+        var popB = new Population { Species = speciesB, Count = 10 };
+        factionA.AddPopulation(popA);
+        factionB.AddPopulation(popB);
+        world.State.Map.GetTile(0, 0).AddPopulation(popA);
+        world.State.Map.GetTile(1, 0).AddPopulation(popB); // adjacent but no shared resources
+
+        for (var i = 0; i < 10; i++)
+            world.Tick();
+
+        Assert.True(factionA.Relations[factionB].TensionScore < 0,
+            "complementary species in proximity should build cooperation, not tension");
+    }
+
+    [Fact]
+    public void Tick_ResourceScarcityEscalatesTensionFaster()
+    {
+        var world = new World();
+
+        // two species competing for the same scarce food
+        var species = new SpeciesDefinition
+        {
+            Name = "Rival",
+            ConsumptionRates = { [ResourceType.Food] = 5f }, // high consumption → stress fast
+            WarAggression = 0.2f,
+            ReproductionRate = 0,
+            StarvationRate = 0
+        };
+
+        var factionA = new Faction { Name = "A", PrimarySpecies = species };
+        var factionB = new Faction { Name = "B", PrimarySpecies = species };
+        world.State.Factions.AddRange([factionA, factionB]);
+
+        var tile = world.State.Map.GetTile(0, 0);
+        tile.Resources.Add(new ResourcePool { Type = ResourceType.Food, Amount = 1f, Capacity = 100f, RegenPerTick = 1f });
+
+        var popA = new Population { Species = species, Count = 50 };
+        var popB = new Population { Species = species, Count = 50 };
+        factionA.AddPopulation(popA);
+        factionB.AddPopulation(popB);
+        tile.AddPopulation(popA);
+        tile.AddPopulation(popB);
+
+        // run a calm (no stress) baseline faction for comparison
+        var calmWorld = new World();
+        var calmA = new Faction { Name = "CA", PrimarySpecies = species };
+        var calmB = new Faction { Name = "CB", PrimarySpecies = species };
+        calmWorld.State.Factions.AddRange([calmA, calmB]);
+        var calmTile = calmWorld.State.Map.GetTile(0, 0);
+        calmTile.Resources.Add(new ResourcePool { Type = ResourceType.Food, Amount = 10_000f, Capacity = 10_000f, RegenPerTick = 500f });
+        var calmPopA = new Population { Species = species, Count = 50 };
+        var calmPopB = new Population { Species = species, Count = 50 };
+        calmA.AddPopulation(calmPopA);
+        calmB.AddPopulation(calmPopB);
+        calmTile.AddPopulation(calmPopA);
+        calmTile.AddPopulation(calmPopB);
+
+        for (var i = 0; i < 5; i++)
+        {
+            world.Tick();
+            calmWorld.Tick();
+        }
+
+        Assert.True(
+            factionA.Relations[factionB].TensionScore > calmA.Relations[calmB].TensionScore,
+            "resource-stressed factions should escalate faster than well-fed ones");
+    }
+
+    [Fact]
     public void Map_NeighborsAreCardinalOnly()
     {
         var map = new WorldMap(3, 3);

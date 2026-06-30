@@ -158,7 +158,14 @@ public class Renderer
                     _                       => ("?",       ConsoleColor.DarkGray)
                 };
 
-                WriteLine(stateLabel, stateColor);
+                Write($"{stateLabel,-8}", stateColor);
+
+                var score = relation.TensionScore;
+                var scoreColor = score > 0 ? ConsoleColor.Red : score < 0 ? ConsoleColor.Green : ConsoleColor.DarkGray;
+                var warNote = relation.State == DiplomaticState.AtWar && relation.TicksAtWar > 0
+                    ? $"  [{relation.TicksAtWar} ticks at war]"
+                    : string.Empty;
+                WriteLine($"  {score:+0.00;-0.00;0.00}{warNote}", scoreColor);
             }
         }
 

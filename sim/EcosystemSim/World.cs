@@ -157,45 +157,81 @@ public class World
 
     private static void UpdateRelationBetween(Faction a, Faction b)
     {
-        const int ProximityRange = 5;
+        const int   ProximityRange     = 5;
+        const float DecayRate          = 0.08f; // tension moves toward 0 per tick when out of range
+        const float AggressionScale    = 0.12f; // multiplier on aggression × proximity
+        const int   CeasefireThreshold = 25;    // ticks at war before ceasefire pressure kicks in
+        const float CeasefireDecay     = 0.10f; // tension reduction per tick once exhausted
 
         if (!a.Relations.ContainsKey(b))
             a.Relations[b] = new FactionRelation { Other = b };
         if (!b.Relations.ContainsKey(a))
             b.Relations[a] = new FactionRelation { Other = a };
 
-        var minDist = MinDistance(a, b);
+        var relation = a.Relations[b];
+        var minDist  = MinDistance(a, b);
+        float delta;
 
         if (minDist > ProximityRange)
         {
-            // out of range: decay tension toward neutral
-            var decayed = a.Relations[b].TensionScore * 0.9f;
-            SyncRelation(a, b, decayed);
-            return;
+            // out of range: decay toward neutral without overshooting zero
+            var sign = Math.Sign(relation.TensionScore);
+            delta = -sign * Math.Min(DecayRate, Math.Abs(relation.TensionScore));
+        }
+        else
+        {
+            var proximityFactor  = (float)(ProximityRange - minDist) / ProximityRange;
+            var aggressionFactor = (a.PrimarySpecies.WarAggression + b.PrimarySpecies.WarAggression) / 2f;
+
+            // base pressure: aggression × how close they are
+            delta = aggressionFactor * proximityFactor * AggressionScale;
+
+            // resource competition: shared scarce resources escalate, complementary resources de-escalate
+            delta += ResourceCompetitionPressure(a, b);
+
+            // war exhaustion: after sustained conflict, ceasefire pressure builds
+            if (relation.State == DiplomaticState.AtWar)
+            {
+                relation.TicksAtWar++;
+                if (relation.TicksAtWar > CeasefireThreshold)
+                    delta -= CeasefireDecay;
+            }
         }
 
+        var newScore = Math.Clamp(relation.TensionScore + delta, -2f, 2f);
+        SyncRelation(a, b, newScore);
+
+        if (TensionToState(newScore) != DiplomaticState.AtWar)
+        {
+            a.Relations[b].TicksAtWar = 0;
+            b.Relations[a].TicksAtWar = 0;
+        }
+    }
+
+    // shared scarce resources → escalation; complementary resources → slight peace bias
+    private static float ResourceCompetitionPressure(Faction a, Faction b)
+    {
         var sharedResources = a.PrimarySpecies.ConsumptionRates.Keys
             .Intersect(b.PrimarySpecies.ConsumptionRates.Keys)
             .Count();
 
-        var aggressionBias    = (a.PrimarySpecies.WarAggression + b.PrimarySpecies.WarAggression) / 2f;
-        var competitionDelta  = sharedResources > 0 ? sharedResources * 0.1f : -0.05f;
-        var proximityDelta    = (float)(ProximityRange - minDist) / ProximityRange * 0.05f;
+        if (sharedResources == 0) return -0.05f;
 
-        var newScore = Math.Clamp(
-            a.Relations[b].TensionScore + aggressionBias * 0.05f + competitionDelta + proximityDelta,
-            -2f, 2f);
+        var eitherStressed = a.Populations.Concat(b.Populations)
+            .Where(p => p.Count > 0)
+            .Any(p => p.LastSatisfaction < 0.7f);
 
-        SyncRelation(a, b, newScore);
+        return eitherStressed ? 0.20f : 0.05f;
     }
 
     private static void SyncRelation(Faction a, Faction b, float tensionScore)
     {
         var state = TensionToState(tensionScore);
         a.Relations[b].TensionScore = tensionScore;
-        a.Relations[b].State = state;
+        a.Relations[b].State        = state;
         b.Relations[a].TensionScore = tensionScore;
-        b.Relations[a].State = state;
+        b.Relations[a].State        = state;
+        b.Relations[a].TicksAtWar   = a.Relations[b].TicksAtWar;
     }
 
     private static DiplomaticState TensionToState(float tension) => tension switch
