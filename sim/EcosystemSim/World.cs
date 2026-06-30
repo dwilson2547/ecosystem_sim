@@ -6,37 +6,40 @@ public class World
 
     public void Tick()
     {
-        RegenerateResources();
-        DistributeResources();
-        ApplyGrowthAndDeath();
+        foreach (var tile in State.Map.AllTiles())
+        {
+            RegenerateResources(tile);
+            DistributeResources(tile);
+            ApplyGrowthAndDeath(tile);
+        }
+
         State.Tick++;
     }
 
     public void Apply(IWorldCommand command) => command.Execute(State);
 
-    private void RegenerateResources()
+    private static void RegenerateResources(Tile tile)
     {
-        foreach (var pool in State.Resources)
+        foreach (var pool in tile.Resources)
             pool.Regen();
     }
 
-    private void DistributeResources()
+    private static void DistributeResources(Tile tile)
     {
-        foreach (var pop in State.Populations)
+        foreach (var pop in tile.Populations)
             pop.LastSatisfaction = 1f;
 
         foreach (var resourceType in Enum.GetValues<ResourceType>())
         {
-            var pool = State.Resources.FirstOrDefault(r => r.Type == resourceType);
+            var pool = tile.Resources.FirstOrDefault(r => r.Type == resourceType);
 
-            var demands = State.Populations
+            var demands = tile.Populations
                 .Select(p => (pop: p, demand: p.Count * p.Species.ConsumptionRates.GetValueOrDefault(resourceType)))
                 .ToList();
 
             var totalDemand = demands.Sum(d => d.demand);
             if (totalDemand == 0) continue;
 
-            // if the pool is missing entirely, treat supply as zero
             var supplyRatio = pool is not null ? Math.Min(pool.Amount / totalDemand, 1f) : 0f;
 
             foreach (var (pop, demand) in demands)
@@ -46,15 +49,14 @@ public class World
                 var received = demand * supplyRatio;
                 pool?.Consume(received);
 
-                // track the worst single-resource satisfaction across all resource types
                 pop.LastSatisfaction = Math.Min(pop.LastSatisfaction, received / demand);
             }
         }
     }
 
-    private void ApplyGrowthAndDeath()
+    private static void ApplyGrowthAndDeath(Tile tile)
     {
-        foreach (var pop in State.Populations)
+        foreach (var pop in tile.Populations)
         {
             var satisfaction = pop.LastSatisfaction;
 
