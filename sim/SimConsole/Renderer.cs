@@ -23,6 +23,8 @@ public class Renderer
         RenderMap(world.State.Map);
         Console.WriteLine();
         RenderPopulations(world.State.Map);
+        Console.WriteLine();
+        RenderFactionRelations(world.State.Factions);
 
         foreach (var pop in world.State.Map.AllPopulations())
             _prevCounts[pop] = pop.Count;
@@ -93,8 +95,8 @@ public class Renderer
 
     private void RenderPopulations(WorldMap map)
     {
-        WriteLine($"{"SPECIES",-22} {"TILE",-7} {"COUNT",6}  {"TREND",5}  SATISFACTION");
-        WriteLine(new string('─', 58), ConsoleColor.DarkGray);
+        WriteLine($"{"SPECIES",-20} {"FACTION",-18} {"TILE",-7} {"COUNT",6}  {"TREND",5}  SAT");
+        WriteLine(new string('─', 68), ConsoleColor.DarkGray);
 
         var populations = map.AllPopulations()
             .Where(p => p.Count > 0)
@@ -109,19 +111,59 @@ public class Renderer
 
         foreach (var pop in populations)
         {
-            var tile = map.AllTiles().First(t => t.Populations.Contains(pop));
+            var tile = pop.CurrentTile ?? map.AllTiles().First(t => t.Populations.Contains(pop));
             var (trend, trendColor) = Trend(pop);
             var satisfaction = (int)(pop.LastSatisfaction * 100);
             var satColor = satisfaction >= 90 ? ConsoleColor.Green
                 : satisfaction >= 50 ? ConsoleColor.Yellow
                 : ConsoleColor.Red;
+            var factionName = pop.Faction?.Name ?? "—";
 
-            Write($"{pop.Species.Name,-22}", GetColor(pop.Species));
+            Write($"{pop.Species.Name,-20}", GetColor(pop.Species));
+            Write($" {factionName,-18}");
             Write($" ({tile.X},{tile.Y})  ");
             Write($"{pop.Count,6}  ");
             Write($"{trend,5}  ", trendColor);
-            WriteLine($"{satisfaction,10}%", satColor);
+            WriteLine($"{satisfaction,3}%", satColor);
         }
+    }
+
+    private static void RenderFactionRelations(List<Faction> factions)
+    {
+        WriteLine("FACTION RELATIONS");
+        WriteLine(new string('─', 68), ConsoleColor.DarkGray);
+
+        var seen = new HashSet<(Faction, Faction)>();
+        var anyRelations = false;
+
+        foreach (var faction in factions.Where(f => !f.IsExtinct))
+        {
+            foreach (var (other, relation) in faction.Relations)
+            {
+                if (seen.Contains((other, faction))) continue;
+                seen.Add((faction, other));
+                anyRelations = true;
+
+                Write($"  {faction.Name,-22}");
+                Write(" ←→ ", ConsoleColor.DarkGray);
+                Write($"{other.Name,-22}");
+                Write("  ");
+
+                var (stateLabel, stateColor) = relation.State switch
+                {
+                    DiplomaticState.Allied  => ("ALLIED",  ConsoleColor.Green),
+                    DiplomaticState.Neutral => ("NEUTRAL", ConsoleColor.DarkGray),
+                    DiplomaticState.Tense   => ("TENSE",   ConsoleColor.Yellow),
+                    DiplomaticState.AtWar   => ("AT WAR",  ConsoleColor.Red),
+                    _                       => ("?",       ConsoleColor.DarkGray)
+                };
+
+                WriteLine(stateLabel, stateColor);
+            }
+        }
+
+        if (!anyRelations)
+            WriteLine("  No factions in proximity yet.", ConsoleColor.DarkGray);
     }
 
     private (string symbol, ConsoleColor color) Trend(Population pop)

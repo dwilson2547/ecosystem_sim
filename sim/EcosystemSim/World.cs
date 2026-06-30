@@ -14,6 +14,7 @@ public class World
         }
 
         Migrate();
+        UpdateFactionRelations();
         State.Tick++;
     }
 
@@ -76,7 +77,7 @@ public class World
 
     private void Migrate()
     {
-        // collect moves first so relocations don't affect each other within the same tick
+        // collect all moves before applying so relocations don't cascade within one tick
         var moves = new List<(Population pop, Tile from, Tile to)>();
 
         foreach (var tile in State.Map.AllTiles())
@@ -97,17 +98,89 @@ public class World
 
         foreach (var (pop, from, to) in moves)
         {
-            from.Populations.Remove(pop);
+            from.RemovePopulation(pop);
 
-            var existing = to.Populations.FirstOrDefault(p => p.Species == pop.Species);
+            // only merge with populations from the same faction (or unfactioned same-species)
+            var existing = to.Populations.FirstOrDefault(p =>
+                p.Species == pop.Species && (pop.Faction is null || p.Faction == pop.Faction));
+
             if (existing is not null)
                 existing.Count += pop.Count;
             else
-                to.Populations.Add(pop);
+                to.AddPopulation(pop);
         }
     }
 
-    // returns the resource type the population is most starved of on this tile
+    private void UpdateFactionRelations()
+    {
+        var active = State.Factions.Where(f => !f.IsExtinct).ToList();
+
+        for (var i = 0; i < active.Count; i++)
+            for (var j = i + 1; j < active.Count; j++)
+                UpdateRelationBetween(active[i], active[j]);
+    }
+
+    private static void UpdateRelationBetween(Faction a, Faction b)
+    {
+        const int ProximityRange = 5;
+
+        if (!a.Relations.ContainsKey(b))
+            a.Relations[b] = new FactionRelation { Other = b };
+        if (!b.Relations.ContainsKey(a))
+            b.Relations[a] = new FactionRelation { Other = a };
+
+        var minDist = MinDistance(a, b);
+
+        if (minDist > ProximityRange)
+        {
+            // out of range: decay tension toward neutral
+            var decayed = a.Relations[b].TensionScore * 0.9f;
+            SyncRelation(a, b, decayed);
+            return;
+        }
+
+        var sharedResources = a.PrimarySpecies.ConsumptionRates.Keys
+            .Intersect(b.PrimarySpecies.ConsumptionRates.Keys)
+            .Count();
+
+        var aggressionBias    = (a.PrimarySpecies.WarAggression + b.PrimarySpecies.WarAggression) / 2f;
+        var competitionDelta  = sharedResources > 0 ? sharedResources * 0.1f : -0.05f;
+        var proximityDelta    = (float)(ProximityRange - minDist) / ProximityRange * 0.05f;
+
+        var newScore = Math.Clamp(
+            a.Relations[b].TensionScore + aggressionBias * 0.05f + competitionDelta + proximityDelta,
+            -2f, 2f);
+
+        SyncRelation(a, b, newScore);
+    }
+
+    private static void SyncRelation(Faction a, Faction b, float tensionScore)
+    {
+        var state = TensionToState(tensionScore);
+        a.Relations[b].TensionScore = tensionScore;
+        a.Relations[b].State = state;
+        b.Relations[a].TensionScore = tensionScore;
+        b.Relations[a].State = state;
+    }
+
+    private static DiplomaticState TensionToState(float tension) => tension switch
+    {
+        < -0.5f => DiplomaticState.Allied,
+        < 0.5f  => DiplomaticState.Neutral,
+        < 1.5f  => DiplomaticState.Tense,
+        _       => DiplomaticState.AtWar
+    };
+
+    private static int MinDistance(Faction a, Faction b) =>
+        a.Populations
+            .Where(p => p.Count > 0 && p.CurrentTile is not null)
+            .SelectMany(p => b.Populations
+                .Where(q => q.Count > 0 && q.CurrentTile is not null)
+                .Select(q => Math.Abs(p.CurrentTile!.X - q.CurrentTile!.X)
+                           + Math.Abs(p.CurrentTile!.Y - q.CurrentTile!.Y)))
+            .DefaultIfEmpty(int.MaxValue)
+            .Min();
+
     private static ResourceType? MostLackingResource(Population pop, Tile tile)
     {
         ResourceType? worst = null;
@@ -128,7 +201,6 @@ public class World
         return worst;
     }
 
-    // returns the neighboring tile with the most of the given resource, or null if no neighbor is better
     private Tile? BestNeighborFor(Tile current, ResourceType resourceType)
     {
         var currentAmount = current.Resources

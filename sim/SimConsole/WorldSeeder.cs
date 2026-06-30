@@ -12,7 +12,8 @@ public static class WorldSeeder
             ConsumptionRates = { [ResourceType.Food] = 2f, [ResourceType.Water] = 1f },
             ReproductionRate = 0.05f,
             StarvationRate = 0.05f,
-            MigrationThreshold = 0.75f  // proactive — moves before resources are fully depleted
+            MigrationThreshold = 0.75f,
+            WarAggression = 0.3f
         };
 
         var brachiosaurus = new SpeciesDefinition
@@ -21,7 +22,8 @@ public static class WorldSeeder
             ConsumptionRates = { [ResourceType.Food] = 5f, [ResourceType.Water] = 2f },
             ReproductionRate = 0.03f,
             StarvationRate = 0.03f,
-            MigrationThreshold = 0.6f
+            MigrationThreshold = 0.6f,
+            WarAggression = 0.1f  // gentle giants
         };
 
         var pachycephalosaurus = new SpeciesDefinition
@@ -30,14 +32,13 @@ public static class WorldSeeder
             ConsumptionRates = { [ResourceType.Food] = 1f },
             ReproductionRate = 0.08f,
             StarvationRate = 0.06f,
-            MigrationThreshold = 0.5f
+            MigrationThreshold = 0.5f,
+            WarAggression = 0.5f  // scrappy, territorial
         };
 
         var world = new World();
         var map = world.State.Map;
 
-        // food regen decreases diagonally NW (lush) → SE (arid)
-        // water runs through a central horizontal band (y = 3–6)
         for (var x = 0; x < map.Width; x++)
         {
             for (var y = 0; y < map.Height; y++)
@@ -60,23 +61,37 @@ public static class WorldSeeder
                         Type = ResourceType.Water,
                         Amount = 80f,
                         Capacity = 120f,
-                        RegenPerTick = 15f   // was 4 — enough to sustain meaningful population sizes
+                        RegenPerTick = 15f
                     });
             }
         }
 
-        // Triceratops: placed in lush NW but away from the water band —
-        // should migrate south toward water within a few ticks
-        map.GetTile(1, 1).Populations.Add(new Population { Species = triceratops, Count = 50 });
-        map.GetTile(3, 2).Populations.Add(new Population { Species = triceratops, Count = 40 });
+        // factions — same species can have multiple independent factions
+        var highlandTric  = new Faction { Name = "Highland Tric",  PrimarySpecies = triceratops };
+        var valleyTric    = new Faction { Name = "Valley Tric",    PrimarySpecies = triceratops };
+        var riverBrachio  = new Faction { Name = "River Brachio",  PrimarySpecies = brachiosaurus };
+        var easternPachy  = new Faction { Name = "Eastern Pachy",  PrimarySpecies = pachycephalosaurus };
+        var midlandPachy  = new Faction { Name = "Midland Pachy",  PrimarySpecies = pachycephalosaurus };
 
-        // Brachiosaurus: center, already in the water band, heavy resource demand
-        map.GetTile(5, 4).Populations.Add(new Population { Species = brachiosaurus, Count = 25 });
+        world.State.Factions.AddRange([highlandTric, valleyTric, riverBrachio, easternPachy, midlandPachy]);
 
-        // Pachycephalosaurus: SE, no water needed — will compete for sparse food and migrate
-        // within the dry region as food depletes on their starting tiles
-        map.GetTile(8, 8).Populations.Add(new Population { Species = pachycephalosaurus, Count = 80 });
-        map.GetTile(7, 6).Populations.Add(new Population { Species = pachycephalosaurus, Count = 60 });
+        void Place(Faction faction, int x, int y, int count)
+        {
+            var pop = new Population { Species = faction.PrimarySpecies, Count = count };
+            faction.AddPopulation(pop);
+            map.GetTile(x, y).AddPopulation(pop);
+        }
+
+        // Triceratops: NW, starting away from water — should migrate south toward water band
+        Place(highlandTric, 1, 1, 50);
+        Place(valleyTric,   3, 2, 40);
+
+        // Brachiosaurus: center, already in the water band
+        Place(riverBrachio, 5, 4, 25);
+
+        // Pachycephalosaurus: SE, no water needed — will compete for food and migrate
+        Place(easternPachy, 8, 8, 80);
+        Place(midlandPachy, 7, 6, 60);
 
         return world;
     }

@@ -210,6 +210,97 @@ public class WorldTests
     }
 
     [Fact]
+    public void Tick_FactionsInProximityBuildTension()
+    {
+        var world = new World();
+        var species = BasicSpecies();
+
+        var factionA = new Faction { Name = "A", PrimarySpecies = species };
+        var factionB = new Faction { Name = "B", PrimarySpecies = species };
+        world.State.Factions.AddRange([factionA, factionB]);
+
+        // place them adjacent — will compete for same food resource
+        var popA = new Population { Species = species, Count = 10 };
+        var popB = new Population { Species = species, Count = 10 };
+        factionA.AddPopulation(popA);
+        factionB.AddPopulation(popB);
+        world.State.Map.GetTile(0, 0).AddPopulation(popA);
+        world.State.Map.GetTile(1, 0).AddPopulation(popB);
+
+        world.State.Map.GetTile(0, 0).Resources.Add(AbundantFood());
+        world.State.Map.GetTile(1, 0).Resources.Add(AbundantFood());
+
+        world.Tick();
+        world.Tick();
+        world.Tick();
+
+        Assert.True(factionA.Relations[factionB].TensionScore > 0, "competing factions in proximity should build tension");
+    }
+
+    [Fact]
+    public void Tick_FactionsOutOfRangeDoNotBuildTension()
+    {
+        var world = new World();
+        var species = BasicSpecies();
+
+        var factionA = new Faction { Name = "A", PrimarySpecies = species };
+        var factionB = new Faction { Name = "B", PrimarySpecies = species };
+        world.State.Factions.AddRange([factionA, factionB]);
+
+        // place them far apart (distance > 5)
+        var popA = new Population { Species = species, Count = 10 };
+        var popB = new Population { Species = species, Count = 10 };
+        factionA.AddPopulation(popA);
+        factionB.AddPopulation(popB);
+        world.State.Map.GetTile(0, 0).AddPopulation(popA);
+        world.State.Map.GetTile(9, 9).AddPopulation(popB);
+
+        world.State.Map.GetTile(0, 0).Resources.Add(AbundantFood());
+        world.State.Map.GetTile(9, 9).Resources.Add(AbundantFood());
+
+        world.Tick();
+        world.Tick();
+        world.Tick();
+
+        Assert.False(factionA.Relations.ContainsKey(factionB) && factionA.Relations[factionB].TensionScore > 0.1f,
+            "factions out of range should not build meaningful tension");
+    }
+
+    [Fact]
+    public void Tick_DifferentFactionsOfSameSpeciesDoNotMergeOnMigration()
+    {
+        var world = new World();
+        var species = new SpeciesDefinition
+        {
+            Name = "Rivals",
+            ConsumptionRates = { [ResourceType.Water] = 1f },
+            MigrationThreshold = 0.9f,
+            StarvationRate = 0.01f
+        };
+
+        var factionA = new Faction { Name = "A", PrimarySpecies = species };
+        var factionB = new Faction { Name = "B", PrimarySpecies = species };
+        world.State.Factions.AddRange([factionA, factionB]);
+
+        var wetTile  = world.State.Map.GetTile(1, 0);
+        var dryTileA = world.State.Map.GetTile(0, 0);
+
+        wetTile.Resources.Add(new ResourcePool { Type = ResourceType.Water, Amount = 1_000f, Capacity = 1_000f, RegenPerTick = 50f });
+
+        var popA = new Population { Species = species, Count = 10 };
+        var popB = new Population { Species = species, Count = 10 };
+        factionA.AddPopulation(popA);
+        factionB.AddPopulation(popB);
+        dryTileA.AddPopulation(popA);
+        wetTile.AddPopulation(popB);
+
+        world.Tick();
+
+        // factionA migrated to wetTile but should NOT merge into factionB's population
+        Assert.Equal(2, wetTile.Populations.Count(p => p.Count > 0));
+    }
+
+    [Fact]
     public void Map_NeighborsAreCardinalOnly()
     {
         var map = new WorldMap(3, 3);

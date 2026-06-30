@@ -16,5 +16,8 @@ public class SpeciesDefinition
     // satisfaction ratio below which the population will seek a better tile (0 = never migrate)
     public float MigrationThreshold { get; init; } = 0.5f;
 
-    // future traits: WarAggression, TechAffinity, TerritorialRange, HerdInstinct, etc.
+    // tendency to escalate tension with nearby factions (0 = passive, 1 = very aggressive)
+    public float WarAggression { get; init; } = 0.2f;
+
+    // future traits: TechAffinity, TerritorialRange, HerdInstinct, etc.
 }
