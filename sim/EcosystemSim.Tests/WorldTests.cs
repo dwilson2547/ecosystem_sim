@@ -140,6 +140,30 @@ public class WorldTests
     }
 
     [Fact]
+    public void Tick_PopulationMigratesAcrossResourceDesertTowardDistantSource()
+    {
+        // reproduce the Highland Tric bug: resource is several tiles away with nothing in between
+        var world      = new World();
+        var startTile  = world.State.Map.GetTile(0, 0);
+        var sourceTile = world.State.Map.GetTile(0, 3); // 3 tiles south, no water in between
+
+        var species = new SpeciesDefinition
+        {
+            Name = "WaterSeeker",
+            ConsumptionRates = { [ResourceType.Water] = 1f },
+            MigrationThreshold = 0.9f,
+            StarvationRate = 0.01f
+        };
+
+        sourceTile.Resources.Add(new ResourcePool { Type = ResourceType.Water, Amount = 1_000f, Capacity = 1_000f, RegenPerTick = 50f });
+        startTile.Populations.Add(new Population { Species = species, Count = 10 });
+
+        world.Tick(); // BFS finds sourceTile and returns first step (0,1)
+
+        Assert.Empty(startTile.Populations.Where(p => p.Count > 0));
+    }
+
+    [Fact]
     public void Tick_PopulationMigratesWhenResourceMissing()
     {
         var world = new World();

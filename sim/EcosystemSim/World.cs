@@ -495,12 +495,40 @@ public class World
 
     private Tile? BestNeighborFor(Tile current, ResourceType resourceType)
     {
-        var currentAmount = current.Resources
-            .FirstOrDefault(r => r.Type == resourceType)?.Amount ?? 0f;
+        const int MaxSearchDepth = 6; // maximum tile distance to search for a resource source
 
-        return State.Map.GetNeighbors(current)
-            .Where(n => (n.Resources.FirstOrDefault(r => r.Type == resourceType)?.Amount ?? 0f) > currentAmount)
-            .OrderByDescending(n => n.Resources.FirstOrDefault(r => r.Type == resourceType)?.Amount ?? 0f)
-            .FirstOrDefault();
+        var currentAmount = ResourceAmount(current, resourceType);
+        var neighbors     = State.Map.GetNeighbors(current).ToList();
+
+        // primary: immediate neighbor with strictly more of the resource
+        var immediate = neighbors
+            .Where(n => ResourceAmount(n, resourceType) > currentAmount)
+            .MaxBy(n => ResourceAmount(n, resourceType));
+
+        if (immediate is not null) return immediate;
+
+        // fallback BFS: when no immediate gradient exists (e.g. resource is several tiles away),
+        // find the nearest tile with more and take the first step toward it
+        var visited = new HashSet<Tile> { current };
+        var queue   = new Queue<(Tile tile, Tile firstStep)>();
+        foreach (var n in neighbors) { queue.Enqueue((n, n)); visited.Add(n); }
+
+        while (queue.Count > 0)
+        {
+            var (tile, firstStep) = queue.Dequeue();
+            if (Math.Abs(tile.X - current.X) + Math.Abs(tile.Y - current.Y) > MaxSearchDepth) continue;
+
+            if (ResourceAmount(tile, resourceType) > currentAmount)
+                return firstStep;
+
+            foreach (var next in State.Map.GetNeighbors(tile))
+                if (visited.Add(next))
+                    queue.Enqueue((next, firstStep));
+        }
+
+        return null;
     }
+
+    private static float ResourceAmount(Tile tile, ResourceType type) =>
+        tile.Resources.FirstOrDefault(r => r.Type == type)?.Amount ?? 0f;
 }
