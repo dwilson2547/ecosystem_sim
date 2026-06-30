@@ -4,6 +4,7 @@ public class Tile
 {
     public int X { get; init; }
     public int Y { get; init; }
+    public TerrainType Terrain { get; set; } = TerrainType.Plains;
     public List<ResourcePool> Resources { get; init; } = [];
     public List<Population> Populations { get; init; } = [];
     public List<ByproductPool> Byproducts { get; init; } = [];

@@ -501,9 +501,12 @@ public class World
         var neighbors     = State.Map.GetNeighbors(current).ToList();
 
         // primary: immediate neighbor with strictly more of the resource
+        // tiebreak on migration cost so populations naturally avoid swamp/highland when routes are similar
         var immediate = neighbors
             .Where(n => ResourceAmount(n, resourceType) > currentAmount)
-            .MaxBy(n => ResourceAmount(n, resourceType));
+            .OrderByDescending(n => ResourceAmount(n, resourceType))
+            .ThenBy(n => TerrainStats.MigrationCostOf(n.Terrain))
+            .FirstOrDefault();
 
         if (immediate is not null) return immediate;
 

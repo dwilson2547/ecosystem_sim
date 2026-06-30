@@ -44,7 +44,7 @@ public class Renderer
 
     private void RenderMap(WorldMap map)
     {
-        WriteLine("WORLD MAP  (food: ·=empty  ░=low  ▒=med  ▓=high  █=full | letter=species | ■=fertile)");
+        WriteLine("WORLD MAP  (·plains  ♣forest  ~swamp  ░desert  ^highland  ≈river | letter=species | green bg=fertile)");
         Console.Write("╔" + new string('═', map.Width) + "╗");
         Console.WriteLine();
 
@@ -81,26 +81,24 @@ public class Renderer
         }
         else
         {
-            Console.ForegroundColor = ConsoleColor.DarkGray;
-            var food = tile.Resources.FirstOrDefault(r => r.Type == ResourceType.Food);
-            Console.Write(FoodChar(food));
+            var (ch, color) = TerrainDisplay(tile.Terrain);
+            Console.ForegroundColor = color;
+            Console.Write(ch);
         }
 
         Console.ResetColor();
     }
 
-    private static char FoodChar(ResourcePool? pool)
+    private static (char ch, ConsoleColor color) TerrainDisplay(TerrainType terrain) => terrain switch
     {
-        if (pool is null || pool.Capacity == 0) return '·';
-        return (pool.Amount / pool.Capacity) switch
-        {
-            0 => '·',
-            <= 0.25f => '░',
-            <= 0.5f => '▒',
-            <= 0.75f => '▓',
-            _ => '█'
-        };
-    }
+        TerrainType.Plains   => ('·', ConsoleColor.DarkGray),
+        TerrainType.Forest   => ('♣', ConsoleColor.DarkGreen),
+        TerrainType.Swamp    => ('~', ConsoleColor.DarkCyan),
+        TerrainType.Desert   => ('░', ConsoleColor.DarkYellow),
+        TerrainType.Highland => ('^', ConsoleColor.Gray),
+        TerrainType.River    => ('≈', ConsoleColor.Blue),
+        _                    => ('?', ConsoleColor.DarkGray),
+    };
 
     private void RenderPopulations(WorldMap map)
     {

@@ -23,13 +23,13 @@ public static class WorldSeeder
         {
             Name = "Brachiosaurus",
             ConsumptionRates = { [ResourceType.Food] = 5f, [ResourceType.Water] = 2f },
-            ByproductRates   = { [ByproductType.Fertilizer] = 0.20f }, // largest animal, most impactful
+            ByproductRates   = { [ByproductType.Fertilizer] = 0.20f },
             ReproductionRate = 0.03f,
             StarvationRate = 0.03f,
             MigrationThreshold = 0.6f,
             WarAggression = 0.1f,
             CombatStrength = 0.6f,
-            Immunity = 0.15f  // large, slow immune response — very vulnerable
+            Immunity = 0.15f
         };
 
         var pachycephalosaurus = new SpeciesDefinition
@@ -42,40 +42,85 @@ public static class WorldSeeder
             MigrationThreshold = 0.5f,
             WarAggression = 0.5f,
             CombatStrength = 0.9f,
-            Immunity = 0.55f  // scrappy and resilient
+            Immunity = 0.55f
         };
 
         var world = new World();
-        var map = world.State.Map;
+        var map   = world.State.Map;
 
-        for (var x = 0; x < map.Width; x++)
+        // terrain layout — rows are y=0 (north) to y=9 (south), columns x=0 (west) to x=9 (east)
+        // H=Highland  F=Forest  R=River  S=Swamp  D=Desert  P=Plains
+        var terrainRows = new[]
         {
-            for (var y = 0; y < map.Height; y++)
-            {
-                var tile = map.GetTile(x, y);
+            "HHHPPPDDDD", // y=0
+            "HHPPPDDDDD", // y=1  — Highland Tric starts at (1,1): Highland
+            "HFFFPPPDDD", // y=2  — Valley   Tric starts at (3,2): Forest
+            "PFRRRPPPDD", // y=3
+            "PFRRRRPPPD", // y=4  — River Brachio starts at (5,4): River
+            "PPRRRRRPPP", // y=5
+            "PSSRRRPPFP", // y=6  — Midland  Pachy starts at (7,6): Plains
+            "PSSSPPPFFP", // y=7
+            "DSPPPPFFFD", // y=8  — Eastern  Pachy starts at (8,8): Forest
+            "DDDPPPPPDD", // y=9
+        };
 
-                var distFromNw = (float)(x + y) / (map.Width + map.Height - 2);
-                var foodRegen = MathF.Round(20f * (1f - 0.7f * distFromNw), 1);
+        var charToTerrain = new Dictionary<char, TerrainType>
+        {
+            ['H'] = TerrainType.Highland,
+            ['F'] = TerrainType.Forest,
+            ['R'] = TerrainType.River,
+            ['S'] = TerrainType.Swamp,
+            ['D'] = TerrainType.Desert,
+            ['P'] = TerrainType.Plains,
+        };
+
+        // food regen per tick by terrain; water only present on River and Swamp tiles
+        var foodRegen = new Dictionary<TerrainType, (float regen, float capacity)>
+        {
+            [TerrainType.Plains]   = (10f, 200f),
+            [TerrainType.Forest]   = (15f, 300f),
+            [TerrainType.Swamp]    = ( 7f, 140f),
+            [TerrainType.Desert]   = ( 3f,  60f),
+            [TerrainType.Highland] = ( 8f, 160f),
+            [TerrainType.River]    = (12f, 240f),
+        };
+
+        var waterByTerrain = new Dictionary<TerrainType, (float regen, float capacity)>
+        {
+            [TerrainType.River] = (15f, 200f),
+            [TerrainType.Swamp] = ( 8f, 120f),
+        };
+
+        for (var y = 0; y < map.Height; y++)
+        {
+            for (var x = 0; x < map.Width; x++)
+            {
+                var terrain = charToTerrain[terrainRows[y][x]];
+                var tile    = map.GetTile(x, y);
+                tile.Terrain = terrain;
+
+                var (fr, fc) = foodRegen[terrain];
                 tile.Resources.Add(new ResourcePool
                 {
                     Type = ResourceType.Food,
-                    Amount = foodRegen * 10f,
-                    Capacity = foodRegen * 20f,
-                    RegenPerTick = foodRegen
+                    Amount = fr * 10f,
+                    Capacity = fc,
+                    RegenPerTick = fr,
                 });
 
-                if (y is >= 3 and <= 6)
+                if (waterByTerrain.TryGetValue(terrain, out var water))
+                {
                     tile.Resources.Add(new ResourcePool
                     {
                         Type = ResourceType.Water,
-                        Amount = 80f,
-                        Capacity = 120f,
-                        RegenPerTick = 15f
+                        Amount = water.regen * 10f,
+                        Capacity = water.capacity,
+                        RegenPerTick = water.regen,
                     });
+                }
             }
         }
 
-        // factions — same species can have multiple independent factions
         var highlandTric  = new Faction { Name = "Highland Tric",  PrimarySpecies = triceratops };
         var valleyTric    = new Faction { Name = "Valley Tric",    PrimarySpecies = triceratops };
         var riverBrachio  = new Faction { Name = "River Brachio",  PrimarySpecies = brachiosaurus };
@@ -91,14 +136,14 @@ public static class WorldSeeder
             map.GetTile(x, y).AddPopulation(pop);
         }
 
-        // Triceratops: NW, starting away from water — should migrate south toward water band
+        // Triceratops: start in Highland/Forest — no water nearby, must migrate south toward River/Swamp band
         Place(highlandTric, 1, 1, 50);
         Place(valleyTric,   3, 2, 40);
 
-        // Brachiosaurus: center, already in the water band
+        // Brachiosaurus: River — water-rich, high food demand
         Place(riverBrachio, 5, 4, 25);
 
-        // Pachycephalosaurus: SE, no water needed — will compete for food and migrate
+        // Pachycephalosaurus: south — food only, will compete and migrate freely
         Place(easternPachy, 8, 8, 80);
         Place(midlandPachy, 7, 6, 60);
 
