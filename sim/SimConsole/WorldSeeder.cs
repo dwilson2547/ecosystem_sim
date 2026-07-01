@@ -10,7 +10,10 @@ public static class WorldSeeder
         {
             Name = "Triceratops",
             RootName = "Triceratops",
-            ConsumptionRates = { [ResourceType.Food] = 2f, [ResourceType.Water] = 1f },
+            FoodConsumptionRate  = 2f,
+            WaterConsumptionRate = 0.5f,
+            // ease of eating (readme): ground 5/5, brush 3/5, canopy 1/5 — a low-slung grazer
+            EaseOfEating = { [ResourceType.Ground] = 5f, [ResourceType.Brush] = 3f, [ResourceType.Canopy] = 1f },
             ByproductRates   = { [ByproductType.Fertilizer] = 0.08f },
             ReproductionRate = 0.015f,
             StarvationRate   = 0.015f,
@@ -20,11 +23,14 @@ public static class WorldSeeder
             Immunity = 0.3f
         };
 
-        var brachiosaurus = new SpeciesDefinition
+        var alamosaurus = new SpeciesDefinition
         {
-            Name = "Brachiosaurus",
-            RootName = "Brachiosaurus",
-            ConsumptionRates = { [ResourceType.Food] = 5f, [ResourceType.Water] = 2f },
+            Name = "Alamosaurus",
+            RootName = "Alamosaurus",
+            FoodConsumptionRate  = 5f,
+            WaterConsumptionRate = 1f,
+            // ease of eating (readme): ground 0/5, brush 2/5, canopy 5/5 — a treetop browser
+            EaseOfEating = { [ResourceType.Ground] = 0f, [ResourceType.Brush] = 2f, [ResourceType.Canopy] = 5f },
             ByproductRates   = { [ByproductType.Fertilizer] = 0.20f },
             ReproductionRate = 0.008f,
             StarvationRate   = 0.008f,
@@ -34,11 +40,14 @@ public static class WorldSeeder
             Immunity = 0.15f
         };
 
-        var pachycephalosaurus = new SpeciesDefinition
+        var parasaurolophus = new SpeciesDefinition
         {
-            Name = "Pachycephalosaurus",
-            RootName = "Pachycephalosaurus",
-            ConsumptionRates = { [ResourceType.Food] = 1f },
+            Name = "Parasaurolophus",
+            RootName = "Parasaurolophus",
+            FoodConsumptionRate  = 1f,
+            WaterConsumptionRate = 0f,
+            // ease of eating (readme): ground 3/5, brush 5/5, canopy 2/5 — a mid-height browser
+            EaseOfEating = { [ResourceType.Ground] = 3f, [ResourceType.Brush] = 5f, [ResourceType.Canopy] = 2f },
             ByproductRates   = { [ByproductType.Fertilizer] = 0.06f },
             ReproductionRate = 0.02f,
             StarvationRate   = 0.015f,
@@ -59,11 +68,11 @@ public static class WorldSeeder
             "HHPPPDDDDD", // y=1  — Highland Tric starts at (1,1): Highland
             "HFFFPPPDDD", // y=2  — Valley   Tric starts at (3,2): Forest
             "PFRRRPPPDD", // y=3
-            "PFRRRRPPPD", // y=4  — River Brachio starts at (5,4): River
+            "PFRRRRPPPD", // y=4  — River Alamo starts at (5,4): River
             "PPRRRRRPPP", // y=5
-            "PSSRRRPPFP", // y=6  — Midland  Pachy starts at (7,6): Plains
+            "PSSRRRPPFP", // y=6  — Midland  Para starts at (7,6): Plains
             "PSSSPPPFFP", // y=7
-            "DSPPPPFFFD", // y=8  — Eastern  Pachy starts at (8,8): Forest
+            "DSPPPPFFFD", // y=8  — Eastern  Para starts at (8,8): Forest
             "DDDPPPPPDD", // y=9
         };
 
@@ -77,22 +86,7 @@ public static class WorldSeeder
             ['P'] = TerrainType.Plains,
         };
 
-        // food regen per tick by terrain; water only present on River and Swamp tiles
-        var foodRegen = new Dictionary<TerrainType, (float regen, float capacity)>
-        {
-            [TerrainType.Plains]   = (10f, 200f),
-            [TerrainType.Forest]   = (15f, 300f),
-            [TerrainType.Swamp]    = ( 7f, 140f),
-            [TerrainType.Desert]   = ( 3f,  60f),
-            [TerrainType.Highland] = ( 8f, 160f),
-            [TerrainType.River]    = (12f, 240f),
-        };
-
-        var waterByTerrain = new Dictionary<TerrainType, (float regen, float capacity)>
-        {
-            [TerrainType.River] = (15f, 200f),
-            [TerrainType.Swamp] = ( 8f, 120f),
-        };
+        var rng = new Random();
 
         for (var y = 0; y < map.Height; y++)
         {
@@ -101,36 +95,17 @@ public static class WorldSeeder
                 var terrain = charToTerrain[terrainRows[y][x]];
                 var tile    = map.GetTile(x, y);
                 tile.Terrain = terrain;
-
-                var (fr, fc) = foodRegen[terrain];
-                tile.Resources.Add(new ResourcePool
-                {
-                    Type = ResourceType.Food,
-                    Amount = fr * 10f,
-                    Capacity = fc,
-                    RegenPerTick = fr,
-                });
-
-                if (waterByTerrain.TryGetValue(terrain, out var water))
-                {
-                    tile.Resources.Add(new ResourcePool
-                    {
-                        Type = ResourceType.Water,
-                        Amount = water.regen * 10f,
-                        Capacity = water.capacity,
-                        RegenPerTick = water.regen,
-                    });
-                }
+                tile.Resources.AddRange(TerrainStats.BuildResourcePools(terrain, rng));
             }
         }
 
-        var highlandTric  = new Faction { Name = "Highland Tric",  PrimarySpecies = triceratops };
-        var valleyTric    = new Faction { Name = "Valley Tric",    PrimarySpecies = triceratops };
-        var riverBrachio  = new Faction { Name = "River Brachio",  PrimarySpecies = brachiosaurus };
-        var easternPachy  = new Faction { Name = "Eastern Pachy",  PrimarySpecies = pachycephalosaurus };
-        var midlandPachy  = new Faction { Name = "Midland Pachy",  PrimarySpecies = pachycephalosaurus };
+        var highlandTric = new Faction { Name = "Highland Tric", PrimarySpecies = triceratops };
+        var valleyTric   = new Faction { Name = "Valley Tric",   PrimarySpecies = triceratops };
+        var riverAlamo   = new Faction { Name = "River Alamo",   PrimarySpecies = alamosaurus };
+        var easternPara  = new Faction { Name = "Eastern Para",  PrimarySpecies = parasaurolophus };
+        var midlandPara  = new Faction { Name = "Midland Para",  PrimarySpecies = parasaurolophus };
 
-        world.State.Factions.AddRange([highlandTric, valleyTric, riverBrachio, easternPachy, midlandPachy]);
+        world.State.Factions.AddRange([highlandTric, valleyTric, riverAlamo, easternPara, midlandPara]);
 
         void Place(Faction faction, int x, int y, int count)
         {
@@ -143,12 +118,12 @@ public static class WorldSeeder
         Place(highlandTric, 1, 1, 50);
         Place(valleyTric,   3, 2, 40);
 
-        // Brachiosaurus: River — water-rich, high food demand
-        Place(riverBrachio, 5, 4, 25);
+        // Alamosaurus: River — water-rich, high food demand
+        Place(riverAlamo, 5, 4, 25);
 
-        // Pachycephalosaurus: south — food only, will compete and migrate freely
-        Place(easternPachy, 8, 8, 80);
-        Place(midlandPachy, 7, 6, 60);
+        // Parasaurolophus: south — food only, will compete and migrate freely
+        Place(easternPara, 8, 8, 80);
+        Place(midlandPara, 7, 6, 60);
 
         return world;
     }

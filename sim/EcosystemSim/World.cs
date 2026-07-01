@@ -11,8 +11,10 @@ public class World
             RegenerateResources(tile);
             DistributeResources(tile);
             ApplyGrowthAndDeath(tile);
+            ApplyWaterExposure(tile);
             ProduceByproducts(tile);
             DecayByproducts(tile);
+            ApplyTerrainDegradation(tile);
         }
 
         Migrate();
@@ -40,23 +42,33 @@ public class World
         foreach (var pool in tile.Resources)
         {
             var seasonMult = SeasonMultiplier(State.CurrentSeason, pool.Type);
-            var bonus      = pool.Type == ResourceType.Food ? fertBonus : 0f;
+            var bonus      = pool.Type != ResourceType.Water ? fertBonus : 0f;
             pool.Amount = MathF.Min(pool.Capacity, pool.Amount + pool.RegenPerTick * seasonMult + bonus);
         }
     }
 
-    private static float SeasonMultiplier(Season season, ResourceType type) => (season, type) switch
+    private static float SeasonMultiplier(Season season, ResourceType type)
     {
-        (Season.Spring, ResourceType.Food)  => 1.3f,
-        (Season.Spring, ResourceType.Water) => 1.4f,
-        (Season.Summer, ResourceType.Food)  => 1.0f,
-        (Season.Summer, ResourceType.Water) => 0.5f,
-        (Season.Autumn, ResourceType.Food)  => 0.8f,
-        (Season.Autumn, ResourceType.Water) => 1.0f,
-        (Season.Winter, ResourceType.Food)  => 0.3f,
-        (Season.Winter, ResourceType.Water) => 0.2f,
-        _                                   => 1.0f,
-    };
+        if (type == ResourceType.Water)
+            return season switch
+            {
+                Season.Spring => 1.4f,
+                Season.Summer => 0.5f,
+                Season.Autumn => 1.0f,
+                Season.Winter => 0.2f,
+                _             => 1.0f,
+            };
+
+        // Ground/Brush/Canopy all follow the same seasonal food curve
+        return season switch
+        {
+            Season.Spring => 1.3f,
+            Season.Summer => 1.0f,
+            Season.Autumn => 0.8f,
+            Season.Winter => 0.3f,
+            _             => 1.0f,
+        };
+    }
 
     private void AdvanceSeason()
     {
@@ -79,33 +91,126 @@ public class World
             pool.Decay();
     }
 
+    // a terrain's defining food stratum (e.g. Forest's Canopy) staying denuded long enough means
+    // sustained heavy browsing has permanently changed the landscape — the terrain converts to
+    // TerrainStats.Degradation's target and gets a fresh pool set for the new terrain.
+    private const float DegradationThresholdRatio = 0.10f; // stratum considered denuded below this fraction of capacity
+    private const float DegradationPressureTarget = 60f;   // sustained ticks of denuded stratum before terrain converts
+
+    private readonly Random _random = new();
+
+    private void ApplyTerrainDegradation(Tile tile)
+    {
+        if (!TerrainStats.Degradation.TryGetValue(tile.Terrain, out var rule)) return;
+
+        var pool  = tile.Resources.FirstOrDefault(r => r.Type == rule.TriggerStratum);
+        var ratio = pool is { Capacity: > 0 } ? pool.Amount / pool.Capacity : 0f;
+
+        if (ratio < DegradationThresholdRatio)
+            tile.DegradationPressure++;
+        else
+            tile.DegradationPressure = Math.Max(0f, tile.DegradationPressure - 1f);
+
+        if (tile.DegradationPressure < DegradationPressureTarget) return;
+
+        tile.Terrain = rule.DegradesTo;
+        tile.Resources.Clear();
+        tile.Resources.AddRange(TerrainStats.BuildResourcePools(rule.DegradesTo, _random));
+        tile.DegradationPressure = 0f;
+    }
+
+    // every 5 individuals of a population compounds its resource draw — a handful of dinosaurs
+    // sip from a tile, but a mega-herd strip-mines it. Keeps single-tile blobs from being viable.
+    private const float DensityDrainBase      = 1.15f;
+    private const float DensityDrainGroupSize = 5f;
+
+    private static float DensityMultiplier(int count) =>
+        MathF.Pow(DensityDrainBase, count / DensityDrainGroupSize);
+
+    private static readonly ResourceType[] FoodStrata = [ResourceType.Ground, ResourceType.Brush, ResourceType.Canopy];
+
     private static void DistributeResources(Tile tile)
     {
         foreach (var pop in tile.Populations)
             pop.LastSatisfaction = pop.Count > 0 ? 1f : 0f;
 
-        foreach (var resourceType in Enum.GetValues<ResourceType>())
+        DistributeWater(tile);
+        DistributeFood(tile);
+    }
+
+    private static void DistributeWater(Tile tile)
+    {
+        var pool = tile.Resources.FirstOrDefault(r => r.Type == ResourceType.Water);
+
+        var demands = tile.Populations
+            .Where(p => p.Species.WaterConsumptionRate > 0)
+            .Select(p => (pop: p, demand: p.Count * p.EffectiveWaterDemand * DensityMultiplier(p.Count)))
+            .ToList();
+
+        var totalDemand = demands.Sum(d => d.demand);
+        if (totalDemand == 0) return;
+
+        var supplyRatio = pool is not null ? Math.Min(pool.Amount / totalDemand, 1f) : 0f;
+
+        foreach (var (pop, demand) in demands)
         {
-            var pool = tile.Resources.FirstOrDefault(r => r.Type == resourceType);
+            if (demand == 0) continue;
 
-            var demands = tile.Populations
-                .Select(p => (pop: p, demand: p.Count * p.EffectiveConsumptionRate(resourceType)))
-                .ToList();
+            var received = demand * supplyRatio;
+            pool?.Consume(received);
 
-            var totalDemand = demands.Sum(d => d.demand);
-            if (totalDemand == 0) continue;
+            pop.LastSatisfaction = Math.Min(pop.LastSatisfaction, received / demand);
+        }
+    }
 
-            var supplyRatio = pool is not null ? Math.Min(pool.Amount / totalDemand, 1f) : 0f;
+    // Food demand is aggregate per population, then split across Ground/Brush/Canopy at
+    // consumption time — weighted by ease-of-eating × current availability, so a population
+    // gravitates toward whatever's both easy for it AND actually present on the tile. If its
+    // easiest strata run dry, some demand naturally spills onto harder-to-eat strata rather than
+    // starving outright, but a stratum it can't eat at all (ease 0) is never touched regardless
+    // of how much sits there unconsumed.
+    private static void DistributeFood(Tile tile)
+    {
+        var pools = FoodStrata.ToDictionary(t => t, t => tile.Resources.FirstOrDefault(r => r.Type == t));
 
-            foreach (var (pop, demand) in demands)
+        var demands = tile.Populations
+            .Where(p => p.Species.FoodConsumptionRate > 0)
+            .Select(p => (pop: p, demand: p.Count * p.EffectiveFoodDemand * DensityMultiplier(p.Count)))
+            .ToList();
+        if (demands.Count == 0) return;
+
+        var preferred      = new Dictionary<(Population, ResourceType), float>();
+        var totalRequested = FoodStrata.ToDictionary(t => t, _ => 0f);
+
+        foreach (var (pop, demand) in demands)
+        {
+            var weights = FoodStrata.ToDictionary(t =>
+                t, t => pop.Species.EffectiveEase(t, tile.Terrain) * (pools[t]?.Amount ?? 0f));
+            var totalWeight = weights.Values.Sum();
+            if (totalWeight <= 0f) continue; // nothing on this tile that the population can eat
+
+            foreach (var stratum in FoodStrata)
             {
-                if (demand == 0) continue;
-
-                var received = demand * supplyRatio;
-                pool?.Consume(received);
-
-                pop.LastSatisfaction = Math.Min(pop.LastSatisfaction, received / demand);
+                var amount = demand * weights[stratum] / totalWeight;
+                preferred[(pop, stratum)] = amount;
+                totalRequested[stratum]  += amount;
             }
+        }
+
+        var supplyRatio = FoodStrata.ToDictionary(t => t, t =>
+            totalRequested[t] > 0 && pools[t] is not null ? Math.Min(pools[t]!.Amount / totalRequested[t], 1f) : 0f);
+
+        foreach (var (pop, demand) in demands)
+        {
+            var received = 0f;
+            foreach (var stratum in FoodStrata)
+            {
+                if (!preferred.TryGetValue((pop, stratum), out var wanted) || wanted <= 0f) continue;
+                var got = wanted * supplyRatio[stratum];
+                pools[stratum]?.Consume(got);
+                received += got;
+            }
+            pop.LastSatisfaction = Math.Min(pop.LastSatisfaction, demand > 0 ? received / demand : 1f);
         }
     }
 
@@ -129,6 +234,35 @@ public class World
         }
     }
 
+    // nothing can live in the water for long — populations stranded on River terrain accumulate
+    // exposure and start drowning past the threshold. Leaving lets them recover (a drink is fine,
+    // moving in is not).
+    private const float WaterSurvivalThreshold = 15f;  // ticks tolerated on River before drowning starts
+    private const float WaterExposureMortality = 0.12f; // fraction lost per tick once past the threshold
+    private const float WaterFleeThreshold     = 10f;  // ticks tolerated before Migrate() forces an evacuation attempt
+
+    private static void ApplyWaterExposure(Tile tile)
+    {
+        var inWater = tile.Terrain == TerrainType.River;
+
+        foreach (var pop in tile.Populations)
+        {
+            if (pop.Count == 0) continue;
+
+            if (!inWater)
+            {
+                pop.WaterExposure = Math.Max(0f, pop.WaterExposure - 1f);
+                continue;
+            }
+
+            pop.WaterExposure++;
+            if (pop.WaterExposure <= WaterSurvivalThreshold) continue;
+
+            var deaths = (int)Math.Ceiling(pop.Count * WaterExposureMortality);
+            pop.Count = Math.Max(0, pop.Count - deaths);
+        }
+    }
+
     private void Migrate()
     {
         // collect all moves before applying so relocations don't cascade within one tick
@@ -139,18 +273,36 @@ public class World
             foreach (var pop in tile.Populations)
             {
                 if (pop.Count == 0) continue;
+
+                // water is actively hostile — flee it well before drowning starts, regardless of
+                // how well-fed the population is. Resource satisfaction alone would never trigger
+                // this since a population sitting on abundant food/water reads as fully satisfied.
+                if (tile.Terrain == TerrainType.River && pop.WaterExposure >= WaterFleeThreshold)
+                {
+                    var refuge = BestNeighborAwayFromWater(tile, pop.Species);
+                    if (refuge is not null)
+                    {
+                        moves.Add((pop, pop.Count, tile, refuge)); // evacuate entirely, not just the excess
+                        continue;
+                    }
+                }
+
                 if (pop.LastSatisfaction >= pop.Species.MigrationThreshold) continue;
 
-                var lacking = MostLackingResource(pop, tile);
+                var lacking = MostLackingNeed(pop, tile);
                 if (lacking is null) continue;
 
-                var destination = BestNeighborFor(tile, lacking.Value);
+                var destination = lacking == ResourceNeed.Food
+                    ? BestNeighborForFood(tile, pop.Species)
+                    : BestNeighborForWater(tile);
                 if (destination is null) continue;
 
                 // only move the individuals that exceed the tile's sustainable capacity;
                 // the rest stay and consume what's available rather than abandoning the tile
-                var sustainable = SustainableCount(pop, tile, lacking.Value);
-                var migrants    = pop.Count - sustainable;
+                var sustainable = lacking == ResourceNeed.Food
+                    ? SustainableFoodCount(pop, tile)
+                    : SustainableWaterCount(pop, tile);
+                var migrants = pop.Count - sustainable;
                 if (migrants <= 0) continue;
 
                 moves.Add((pop, migrants, tile, destination));
@@ -178,14 +330,32 @@ public class World
         }
     }
 
-    // Returns how many individuals of pop the tile can sustainably support based on regen.
-    private int SustainableCount(Population pop, Tile tile, ResourceType lacking)
+    // Returns how many individuals of pop the tile can sustainably support based on water regen.
+    private int SustainableWaterCount(Population pop, Tile tile)
     {
-        var pool = tile.Resources.FirstOrDefault(r => r.Type == lacking);
+        var pool = tile.Resources.FirstOrDefault(r => r.Type == ResourceType.Water);
         if (pool is null) return 0;
-        var rate = pop.EffectiveConsumptionRate(lacking);
+        var rate = pop.EffectiveWaterDemand;
         if (rate <= 0f) return pop.Count;
-        var effectiveRegen = pool.RegenPerTick * SeasonMultiplier(State.CurrentSeason, lacking);
+        var effectiveRegen = pool.RegenPerTick * SeasonMultiplier(State.CurrentSeason, ResourceType.Water);
+        return (int)Math.Floor(effectiveRegen / rate);
+    }
+
+    // Same idea for food, but regen is summed across strata weighted by ease-of-eating — a
+    // stratum the population can't eat contributes nothing even if it regenerates quickly.
+    private int SustainableFoodCount(Population pop, Tile tile)
+    {
+        var rate = pop.EffectiveFoodDemand;
+        if (rate <= 0f) return pop.Count;
+
+        var effectiveRegen = FoodStrata.Sum(stratum =>
+        {
+            var pool = tile.Resources.FirstOrDefault(r => r.Type == stratum);
+            if (pool is null) return 0f;
+            var ease = pop.Species.EffectiveEase(stratum, tile.Terrain);
+            return ease * pool.RegenPerTick * SeasonMultiplier(State.CurrentSeason, stratum);
+        });
+
         return (int)Math.Floor(effectiveRegen / rate);
     }
 
@@ -203,6 +373,7 @@ public class World
             ImmunityPressure = source.ImmunityPressure,
             Disease         = source.Disease,
             InfectionLevel  = source.InfectionLevel,
+            WaterExposure   = source.WaterExposure,
         };
         fork.Faction = source.Faction; // internal set; faction list entry deferred to PlaceOrMerge
         return fork;
@@ -223,6 +394,7 @@ public class World
             existing.SizeIndex     = (existing.SizeIndex     * existing.Count + pop.SizeIndex     * pop.Count) / total;
             existing.ImmunityDelta = (existing.ImmunityDelta * existing.Count + pop.ImmunityDelta * pop.Count) / total;
             existing.SizePressure  = (existing.SizePressure  * existing.Count + pop.SizePressure  * pop.Count) / total;
+            existing.WaterExposure = (existing.WaterExposure * existing.Count + pop.WaterExposure * pop.Count) / total;
             existing.Count += pop.Count;
 
             // pop is absorbed: remove from faction list if it was registered there
@@ -494,25 +666,23 @@ public class World
     {
         // bake the evolved size into the new species baseline so traits are continuous
         // across speciation (effective values at moment of split == effective values right after)
-        var newConsumption = parent.ConsumptionRates.ToDictionary(
-            kv => kv.Key,
-            kv => kv.Key == ResourceType.Food ? kv.Value * sizeIndex : kv.Value);
-
         var newByproducts = parent.ByproductRates
             .ToDictionary(kv => kv.Key, kv => kv.Value * sizeIndex);
 
         return new SpeciesDefinition
         {
-            Name             = name,
-            RootName         = parent.EffectiveRootName,
-            ConsumptionRates = newConsumption,
-            ByproductRates   = newByproducts,
-            CombatStrength   = parent.CombatStrength   * MathF.Sqrt(sizeIndex),
-            ReproductionRate = parent.ReproductionRate / MathF.Sqrt(sizeIndex), // larger → slower repro
-            StarvationRate   = parent.StarvationRate,
-            MigrationThreshold = parent.MigrationThreshold,
-            WarAggression    = parent.WarAggression,
-            Immunity         = MathF.Min(1f, parent.Immunity + immunityDelta),
+            Name                 = name,
+            RootName             = parent.EffectiveRootName,
+            FoodConsumptionRate  = parent.FoodConsumptionRate * sizeIndex,
+            WaterConsumptionRate = parent.WaterConsumptionRate, // unaffected by size, same invariant as before
+            EaseOfEating         = new Dictionary<ResourceType, float>(parent.EaseOfEating), // diet doesn't change with size
+            ByproductRates       = newByproducts,
+            CombatStrength       = parent.CombatStrength   * MathF.Sqrt(sizeIndex),
+            ReproductionRate     = parent.ReproductionRate / MathF.Sqrt(sizeIndex), // larger → slower repro
+            StarvationRate       = parent.StarvationRate,
+            MigrationThreshold   = parent.MigrationThreshold,
+            WarAggression        = parent.WarAggression,
+            Immunity             = MathF.Min(1f, parent.Immunity + immunityDelta),
         };
     }
 
@@ -592,9 +762,9 @@ public class World
     // shared starving resources → escalation; complementary resources → cooperation bias
     private static float ResourceCompetitionPressure(Faction a, Faction b)
     {
-        var sharedResources = a.PrimarySpecies.ConsumptionRates.Keys
-            .Intersect(b.PrimarySpecies.ConsumptionRates.Keys)
-            .Count();
+        var sharedResources = 0;
+        if (a.PrimarySpecies.FoodConsumptionRate  > 0 && b.PrimarySpecies.FoodConsumptionRate  > 0) sharedResources++;
+        if (a.PrimarySpecies.WaterConsumptionRate > 0 && b.PrimarySpecies.WaterConsumptionRate > 0) sharedResources++;
 
         if (sharedResources == 0) return -0.08f; // complementary niches actively build cooperation
 
@@ -652,39 +822,68 @@ public class World
                         Math.Abs((-aq - ar) - (-bq - br)));
     }
 
-    private static ResourceType? MostLackingResource(Population pop, Tile tile)
+    private enum ResourceNeed { Food, Water }
+
+    private static ResourceNeed? MostLackingNeed(Population pop, Tile tile)
     {
-        ResourceType? worst = null;
+        ResourceNeed? worst = null;
         var worstRatio = float.MaxValue;
 
-        foreach (var resourceType in pop.Species.ConsumptionRates.Keys)
+        if (pop.Species.FoodConsumptionRate > 0)
         {
-            var effectiveRate = pop.EffectiveConsumptionRate(resourceType);
-            if (effectiveRate == 0) continue;
-            var pool = tile.Resources.FirstOrDefault(r => r.Type == resourceType);
-            var ratio = pool is null ? 0f : pool.Amount / (pop.Count * effectiveRate);
-            if (ratio < worstRatio)
-            {
-                worstRatio = ratio;
-                worst = resourceType;
-            }
+            var demand = pop.Count * pop.EffectiveFoodDemand;
+            var ratio  = demand > 0 ? EffectiveFoodValue(tile, pop.Species) / demand : float.MaxValue;
+            if (ratio < worstRatio) { worstRatio = ratio; worst = ResourceNeed.Food; }
+        }
+
+        if (pop.Species.WaterConsumptionRate > 0)
+        {
+            var pool   = tile.Resources.FirstOrDefault(r => r.Type == ResourceType.Water);
+            var demand = pop.Count * pop.EffectiveWaterDemand;
+            var ratio  = demand > 0 ? (pool?.Amount ?? 0f) / demand : float.MaxValue;
+            if (ratio < worstRatio) { worstRatio = ratio; worst = ResourceNeed.Water; }
         }
 
         return worst;
     }
 
-    private Tile? BestNeighborFor(Tile current, ResourceType resourceType)
+    // how much food value a tile represents to a given species — each stratum's raw amount
+    // weighted by how easily the species can actually eat it there. This is what "favor areas
+    // with more easy-to-eat food, but factor in what's available" comes down to: a tile stuffed
+    // with a stratum the species is bad at scores low, and a stratum it's great at but which is
+    // nearly empty also scores low. Both ease AND availability have to be there.
+    private static float EffectiveFoodValue(Tile tile, SpeciesDefinition species) =>
+        FoodStrata.Sum(stratum => ResourceAmount(tile, stratum) * species.EffectiveEase(stratum, tile.Terrain));
+
+    // dry ground to flee to — prefers whichever non-River neighbor has the most combined
+    // effective food (for this species) plus water on hand, cheapest terrain to enter as
+    // tiebreaker. Returns null if boxed in by River on every side (e.g. mid-channel); the
+    // population takes another tick of losses and retries next tick.
+    private Tile? BestNeighborAwayFromWater(Tile current, SpeciesDefinition species) =>
+        State.Map.GetNeighbors(current)
+            .Where(n => n.Terrain != TerrainType.River)
+            .OrderByDescending(n => EffectiveFoodValue(n, species) + ResourceAmount(n, ResourceType.Water))
+            .ThenBy(n => TerrainStats.MigrationCostOf(n.Terrain))
+            .FirstOrDefault();
+
+    private Tile? BestNeighborForWater(Tile current) =>
+        BestNeighborByValue(current, t => ResourceAmount(t, ResourceType.Water));
+
+    private Tile? BestNeighborForFood(Tile current, SpeciesDefinition species) =>
+        BestNeighborByValue(current, t => EffectiveFoodValue(t, species));
+
+    private Tile? BestNeighborByValue(Tile current, Func<Tile, float> valueOf)
     {
         const int MaxSearchDepth = 6; // maximum tile distance to search for a resource source
 
-        var currentAmount = ResourceAmount(current, resourceType);
+        var currentValue = valueOf(current);
         var neighbors     = State.Map.GetNeighbors(current).ToList();
 
-        // primary: immediate neighbor with strictly more of the resource
+        // primary: immediate neighbor with strictly more value
         // tiebreak on migration cost so populations naturally avoid swamp/highland when routes are similar
         var immediate = neighbors
-            .Where(n => ResourceAmount(n, resourceType) > currentAmount)
-            .OrderByDescending(n => ResourceAmount(n, resourceType))
+            .Where(n => valueOf(n) > currentValue)
+            .OrderByDescending(valueOf)
             .ThenBy(n => TerrainStats.MigrationCostOf(n.Terrain))
             .FirstOrDefault();
 
@@ -701,7 +900,7 @@ public class World
             var (tile, firstStep) = queue.Dequeue();
             if (HexDistance(tile, current) > MaxSearchDepth) continue;
 
-            if (ResourceAmount(tile, resourceType) > currentAmount)
+            if (valueOf(tile) > currentValue)
                 return firstStep;
 
             foreach (var next in State.Map.GetNeighbors(tile))

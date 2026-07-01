@@ -2,6 +2,10 @@ namespace EcosystemSim;
 
 public enum ResourceType
 {
-    Food,
+    // food strata — how much of each a species can actually eat is governed by
+    // SpeciesDefinition.EaseOfEating, not by the resource type itself
+    Ground,
+    Brush,
+    Canopy,
     Water
 }

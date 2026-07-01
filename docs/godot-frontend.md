@@ -46,6 +46,10 @@ godot/
 ├── EcosystemGame.csproj   — C# project (Godot.NET.Sdk, refs EcosystemSim)
 ├── scenes/
 │   └── Main.tscn          — root scene; just a Node2D with SimMain.cs attached
+├── assets/
+│   └── sprites/
+│       ├── alamosaurus.png — processed map icon (transparent bg, two-tone brown fill)
+│       └── triceratops.png — processed map icon (transparent bg, multicolor head, dull brown/grey body)
 └── scripts/
     ├── SimManager.cs      — autoload singleton: owns World, drives tick timer
     ├── DemoWorldSeeder.cs — creates the demo world (mirrors SimConsole/WorldSeeder)
@@ -133,8 +137,21 @@ Singleton accessed anywhere via `SimManager.Instance`.
 Each tile shows:
 - **Background color** — terrain type (see `HexTile.TerrainColor`)
 - **Green tint** — fertilizer > 40 units on the tile
-- **Label** — first letter of dominant species + count (e.g. `T\n87`)
-  - Letter changes to `G`/`L` when speciation produces "Greater"/"Lesser" variants
+- **Dominant population indicator** — whichever living population has the highest count on the
+  tile:
+  - **Species with icon art** (`HexTile.IconPaths`: currently Alamosaurus, Triceratops) — rendered
+    as a cluster of up to `MaxSpeciesIcons` (5) copies of the species' icon, one icon per
+    `CountPerIcon` (20) individuals, capped at 5 — quantity is read from icon count, not text.
+    Looked up via `Species.EffectiveRootName` so evolved "Greater/Giant X" variants still get the
+    icon. Layout is a fixed 1/2/3/4/5-icon pattern (`HexTile.IconLayouts`); tune `IconSize` /
+    `IconSpacing` there. A single pool of 5 `Sprite2D` nodes is reused and re-textured for
+    whichever species is dominant (only one is ever dominant on a tile at a time).
+  - **Every other species** — first letter of dominant species + count (e.g. `T\n87`), letter
+    changes to `G`/`L` when speciation produces "Greater"/"Lesser" variants
+
+Adding icon art for another species: process the source art (transparent background, filled
+silhouette, ~64×64) into `assets/sprites/<name>.png`, then add one entry to `HexTile.IconPaths`
+keyed by that species' `RootName`/`Name` — no other code changes needed.
 
 ---
 

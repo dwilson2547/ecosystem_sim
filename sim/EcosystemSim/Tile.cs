@@ -9,6 +9,10 @@ public class Tile
     public List<Population> Populations { get; init; } = [];
     public List<ByproductPool> Byproducts { get; init; } = [];
 
+    // ticks the terrain's defining food stratum has spent denuded (see TerrainStats.Degradation);
+    // decays back to 0 once the stratum recovers. Drives runtime terrain conversion in World.ApplyTerrainDegradation.
+    public float DegradationPressure { get; set; }
+
     public void AddPopulation(Population pop)
     {
         pop.CurrentTile = this;

@@ -7,14 +7,14 @@ public class WorldTests
     private static SpeciesDefinition BasicSpecies(string name = "TestDino") => new()
     {
         Name = name,
-        ConsumptionRates = { [ResourceType.Food] = 1f },
+        FoodConsumptionRate = 1f,
         ReproductionRate = 0.1f,
         StarvationRate = 0.5f
     };
 
     private static ResourcePool AbundantFood(float amount = 10_000f) => new()
     {
-        Type = ResourceType.Food,
+        Type = ResourceType.Ground,
         Amount = amount,
         Capacity = 10_000f,
         RegenPerTick = 500f
@@ -22,7 +22,7 @@ public class WorldTests
 
     private static ResourcePool EmptyFood() => new()
     {
-        Type = ResourceType.Food,
+        Type = ResourceType.Ground,
         Amount = 0f,
         Capacity = 1_000f,
         RegenPerTick = 0f
@@ -69,7 +69,7 @@ public class WorldTests
         var tile = world.State.Map.GetTile(0, 0);
         tile.Resources.Add(new ResourcePool
         {
-            Type = ResourceType.Food,
+            Type = ResourceType.Ground,
             Amount = 100f,
             Capacity = 1_000f,
             RegenPerTick = 0f
@@ -90,7 +90,7 @@ public class WorldTests
         var tile  = world.State.Map.GetTile(0, 0);
         var pop   = new Population
         {
-            Species = new SpeciesDefinition { Name = "Fragile", ConsumptionRates = { [ResourceType.Food] = 1f }, StarvationRate = 1f },
+            Species = new SpeciesDefinition { Name = "Fragile", FoodConsumptionRate = 1f, StarvationRate = 1f },
             Count = 1
         };
         tile.Populations.Add(pop);
@@ -109,7 +109,7 @@ public class WorldTests
         var tile = world.State.Map.GetTile(0, 0);
         tile.Resources.Add(new ResourcePool
         {
-            Type = ResourceType.Food,
+            Type = ResourceType.Ground,
             Amount = 0f,
             Capacity = 1_000f,
             RegenPerTick = 100f
@@ -151,7 +151,7 @@ public class WorldTests
         var species = new SpeciesDefinition
         {
             Name = "WaterSeeker",
-            ConsumptionRates = { [ResourceType.Water] = 1f },
+            WaterConsumptionRate = 1f,
             MigrationThreshold = 0.9f,
             StarvationRate = 0.01f
         };
@@ -174,7 +174,7 @@ public class WorldTests
         var species = new SpeciesDefinition
         {
             Name = "WaterSeeker",
-            ConsumptionRates = { [ResourceType.Water] = 1f },
+            WaterConsumptionRate = 1f,
             MigrationThreshold = 0.9f,
             StarvationRate = 0.01f // low so population survives long enough to migrate
         };
@@ -198,7 +198,7 @@ public class WorldTests
         var species = new SpeciesDefinition
         {
             Name = "Merger",
-            ConsumptionRates = { [ResourceType.Water] = 1f },
+            WaterConsumptionRate = 1f,
             MigrationThreshold = 0.9f,
             StarvationRate = 0.01f
         };
@@ -421,7 +421,7 @@ public class WorldTests
     {
         var world   = new World();
         // aggression high enough to overcome peace drift even when well-fed
-        var species = new SpeciesDefinition { Name = "Aggressive", WarAggression = 0.5f, ConsumptionRates = { [ResourceType.Food] = 1f }, ReproductionRate = 0, StarvationRate = 0 };
+        var species = new SpeciesDefinition { Name = "Aggressive", WarAggression = 0.5f, FoodConsumptionRate = 1f, ReproductionRate = 0, StarvationRate = 0 };
 
         var factionA = new Faction { Name = "A", PrimarySpecies = species };
         var factionB = new Faction { Name = "B", PrimarySpecies = species };
@@ -447,7 +447,7 @@ public class WorldTests
     public void Tick_WellFedLowAggressionFactionsDoNotEscalate()
     {
         var world   = new World();
-        var species = new SpeciesDefinition { Name = "Peaceful", WarAggression = 0.2f, ConsumptionRates = { [ResourceType.Food] = 1f }, ReproductionRate = 0, StarvationRate = 0 };
+        var species = new SpeciesDefinition { Name = "Peaceful", WarAggression = 0.2f, FoodConsumptionRate = 1f, ReproductionRate = 0, StarvationRate = 0 };
 
         var factionA = new Faction { Name = "A", PrimarySpecies = species };
         var factionB = new Faction { Name = "B", PrimarySpecies = species };
@@ -505,7 +505,7 @@ public class WorldTests
         var species = new SpeciesDefinition
         {
             Name = "Rivals",
-            ConsumptionRates = { [ResourceType.Water] = 1f },
+            WaterConsumptionRate = 1f,
             MigrationThreshold = 0.9f,
             StarvationRate = 0.01f
         };
@@ -574,8 +574,8 @@ public class WorldTests
         var world = new World();
 
         // species A eats only food, species B eats only water — no competition
-        var speciesA = new SpeciesDefinition { Name = "A", ConsumptionRates = { [ResourceType.Food] = 1f }, WarAggression = 0.1f, ReproductionRate = 0, StarvationRate = 0 };
-        var speciesB = new SpeciesDefinition { Name = "B", ConsumptionRates = { [ResourceType.Water] = 1f }, WarAggression = 0.1f, ReproductionRate = 0, StarvationRate = 0 };
+        var speciesA = new SpeciesDefinition { Name = "A", FoodConsumptionRate = 1f, WarAggression = 0.1f, ReproductionRate = 0, StarvationRate = 0 };
+        var speciesB = new SpeciesDefinition { Name = "B", WaterConsumptionRate = 1f, WarAggression = 0.1f, ReproductionRate = 0, StarvationRate = 0 };
 
         var factionA = new Faction { Name = "A", PrimarySpecies = speciesA };
         var factionB = new Faction { Name = "B", PrimarySpecies = speciesB };
@@ -604,7 +604,7 @@ public class WorldTests
         var species = new SpeciesDefinition
         {
             Name = "Rival",
-            ConsumptionRates = { [ResourceType.Food] = 5f }, // high consumption → stress fast
+            FoodConsumptionRate = 5f, // high consumption → stress fast
             WarAggression = 0.2f,
             ReproductionRate = 0,
             StarvationRate = 0
@@ -615,7 +615,7 @@ public class WorldTests
         world.State.Factions.AddRange([factionA, factionB]);
 
         var tile = world.State.Map.GetTile(0, 0);
-        tile.Resources.Add(new ResourcePool { Type = ResourceType.Food, Amount = 1f, Capacity = 100f, RegenPerTick = 1f });
+        tile.Resources.Add(new ResourcePool { Type = ResourceType.Ground, Amount = 1f, Capacity = 100f, RegenPerTick = 1f });
 
         var popA = new Population { Species = species, Count = 50 };
         var popB = new Population { Species = species, Count = 50 };
@@ -630,7 +630,7 @@ public class WorldTests
         var calmB = new Faction { Name = "CB", PrimarySpecies = species };
         calmWorld.State.Factions.AddRange([calmA, calmB]);
         var calmTile = calmWorld.State.Map.GetTile(0, 0);
-        calmTile.Resources.Add(new ResourcePool { Type = ResourceType.Food, Amount = 10_000f, Capacity = 10_000f, RegenPerTick = 500f });
+        calmTile.Resources.Add(new ResourcePool { Type = ResourceType.Ground, Amount = 10_000f, Capacity = 10_000f, RegenPerTick = 500f });
         var calmPopA = new Population { Species = species, Count = 50 };
         var calmPopB = new Population { Species = species, Count = 50 };
         calmA.AddPopulation(calmPopA);
@@ -699,16 +699,16 @@ public class WorldTests
         var tilePlain = world.State.Map.GetTile(9, 9);
 
         const float regen = 10f, cap = 1000f;
-        tileFert .Resources.Add(new ResourcePool { Type = ResourceType.Food, Amount = 0f, Capacity = cap, RegenPerTick = regen });
-        tilePlain.Resources.Add(new ResourcePool { Type = ResourceType.Food, Amount = 0f, Capacity = cap, RegenPerTick = regen });
+        tileFert .Resources.Add(new ResourcePool { Type = ResourceType.Ground, Amount = 0f, Capacity = cap, RegenPerTick = regen });
+        tilePlain.Resources.Add(new ResourcePool { Type = ResourceType.Ground, Amount = 0f, Capacity = cap, RegenPerTick = regen });
 
         // seed fertilizer on the first tile
         tileFert.GetOrAddByproduct(ByproductType.Fertilizer).Add(100f);
 
         world.Tick();
 
-        var foodFert  = tileFert .Resources.First(r => r.Type == ResourceType.Food).Amount;
-        var foodPlain = tilePlain.Resources.First(r => r.Type == ResourceType.Food).Amount;
+        var foodFert  = tileFert .Resources.First(r => r.Type == ResourceType.Ground).Amount;
+        var foodPlain = tilePlain.Resources.First(r => r.Type == ResourceType.Ground).Amount;
         Assert.True(foodFert > foodPlain, "tile with fertilizer should regen more food");
     }
 
@@ -790,7 +790,7 @@ public class WorldTests
 
     private static Population PopOnTile(World world, Tile tile, int count, float consumptionRate = 1f)
     {
-        var species = new SpeciesDefinition { Name = "Evo", ConsumptionRates = { [ResourceType.Food] = consumptionRate }, ReproductionRate = 0, StarvationRate = 0 };
+        var species = new SpeciesDefinition { Name = "Evo", FoodConsumptionRate = consumptionRate, ReproductionRate = 0, StarvationRate = 0 };
         var pop = new Population { Species = species, Count = count };
         tile.Populations.Add(pop);
         return pop;
@@ -860,8 +860,8 @@ public class WorldTests
         var tileB = world.State.Map.GetTile(9, 9);
 
         const float startFood = 500f;
-        tileA.Resources.Add(new ResourcePool { Type = ResourceType.Food, Amount = startFood, Capacity = 1000f, RegenPerTick = 0 });
-        tileB.Resources.Add(new ResourcePool { Type = ResourceType.Food, Amount = startFood, Capacity = 1000f, RegenPerTick = 0 });
+        tileA.Resources.Add(new ResourcePool { Type = ResourceType.Ground, Amount = startFood, Capacity = 1000f, RegenPerTick = 0 });
+        tileB.Resources.Add(new ResourcePool { Type = ResourceType.Ground, Amount = startFood, Capacity = 1000f, RegenPerTick = 0 });
 
         var large  = PopOnTile(world, tileA, 10); large.SizeIndex  = 2.0f;
         var normal = PopOnTile(world, tileB, 10); normal.SizeIndex = 1.0f;
@@ -953,7 +953,7 @@ public class WorldTests
     {
         Name = name,
         RootName = name,
-        ConsumptionRates = { [ResourceType.Food] = 2f },
+        FoodConsumptionRate = 2f,
         CombatStrength = 1.0f,
         Immunity = 0.2f,
         ByproductRates = { [ByproductType.Fertilizer] = 0.1f },
@@ -1008,8 +1008,8 @@ public class WorldTests
         world.Tick();
 
         // food consumption should be baked in at parent × sizeIndex
-        var expectedFood = parent.ConsumptionRates[ResourceType.Food] * World.SpeciationLargeThreshold;
-        Assert.Equal(expectedFood, pop.Species.ConsumptionRates[ResourceType.Food], precision: 3);
+        var expectedFood = parent.FoodConsumptionRate * World.SpeciationLargeThreshold;
+        Assert.Equal(expectedFood, pop.Species.FoodConsumptionRate, precision: 3);
 
         // combat strength baked in at parent × sqrt(sizeIndex)
         var expectedCombat = parent.CombatStrength * MathF.Sqrt(World.SpeciationLargeThreshold);
@@ -1027,7 +1027,7 @@ public class WorldTests
         {
             Name = "Greater TestDino",
             RootName = "TestDino",
-            ConsumptionRates = { [ResourceType.Food] = 3f },
+            FoodConsumptionRate = 3f,
             CombatStrength = 1.2f,
             Immunity = 0.2f,
             ReproductionRate = 0.04f,
@@ -1093,7 +1093,7 @@ public class WorldTests
     {
         var world = new World();
         var tile  = world.State.Map.GetTile(0, 0);
-        tile.Resources.Add(new ResourcePool { Type = ResourceType.Food, Amount = 0f, Capacity = 10_000f, RegenPerTick = 10f });
+        tile.Resources.Add(new ResourcePool { Type = ResourceType.Ground, Amount = 0f, Capacity = 10_000f, RegenPerTick = 10f });
 
         // fast-forward to Winter (3 full seasons)
         for (var i = 0; i < World.TicksPerSeason * 3; i++)
@@ -1115,5 +1115,262 @@ public class WorldTests
 
         Assert.True(winterRegen < springRegen,
             $"winter regen ({winterRegen:F1}) should be much lower than spring regen ({springRegen:F1})");
+    }
+
+    [Fact]
+    public void Tick_LargePopulationHasWorseSatisfactionThanSmallOnePerCapita()
+    {
+        // same food-per-head available on both tiles; only the group size differs.
+        // density drain should make the crowded tile's per-capita satisfaction worse.
+        var world = new World();
+
+        var crowdedTile = world.State.Map.GetTile(0, 0);
+        var sparseTile  = world.State.Map.GetTile(5, 5);
+
+        crowdedTile.Resources.Add(new ResourcePool { Type = ResourceType.Ground, Amount = 1_000f, Capacity = 1_000f, RegenPerTick = 0f });
+        sparseTile.Resources.Add(new ResourcePool { Type = ResourceType.Ground, Amount = 100f, Capacity = 1_000f, RegenPerTick = 0f });
+
+        var crowded = new Population { Species = BasicSpecies(), Count = 100 }; // 1_000 food / 100 head = 10/head
+        var sparse  = new Population { Species = BasicSpecies(), Count = 10 };  // 100 food / 10 head = 10/head
+        crowdedTile.Populations.Add(crowded);
+        sparseTile.Populations.Add(sparse);
+
+        world.Tick();
+
+        Assert.True(crowded.LastSatisfaction < sparse.LastSatisfaction,
+            $"crowded tile satisfaction ({crowded.LastSatisfaction:F2}) should be worse than sparse tile ({sparse.LastSatisfaction:F2}) despite equal food-per-head");
+    }
+
+    [Fact]
+    public void Tick_PopulationStrandedOnRiverEventuallyDrowns()
+    {
+        var world = new World();
+        var river = world.State.Map.GetTile(5, 5); // interior tile — has all 6 neighbors
+        river.Terrain = TerrainType.River;
+
+        // box the tile in with River on every side so there's nowhere to flee to,
+        // isolating the drowning mechanic from the flee-to-safety behavior
+        foreach (var n in world.State.Map.GetNeighbors(river))
+            n.Terrain = TerrainType.River;
+
+        // abundant food/water so death is caused by drowning, not starvation
+        river.Resources.Add(AbundantFood());
+        river.Resources.Add(new ResourcePool { Type = ResourceType.Water, Amount = 10_000f, Capacity = 10_000f, RegenPerTick = 500f });
+
+        var species = new SpeciesDefinition
+        {
+            Name = "Landlubber",
+            FoodConsumptionRate = 1f,
+            ReproductionRate = 0f,
+            StarvationRate = 0f,
+        };
+        var pop = new Population { Species = species, Count = 100 };
+        river.Populations.Add(pop);
+
+        for (var i = 0; i < 40; i++)
+            world.Tick();
+
+        Assert.True(pop.Count < 100, "population boxed in on River past the survival threshold should take losses");
+    }
+
+    [Fact]
+    public void Tick_PopulationFleesRiverBeforeDrowningWhenRefugeExists()
+    {
+        var world = new World();
+        var river = world.State.Map.GetTile(0, 0);
+        var bank  = world.State.Map.GetTile(1, 0); // plains neighbor to flee to
+        river.Terrain = TerrainType.River;
+
+        river.Resources.Add(AbundantFood());
+        river.Resources.Add(new ResourcePool { Type = ResourceType.Water, Amount = 10_000f, Capacity = 10_000f, RegenPerTick = 500f });
+        bank.Resources.Add(AbundantFood());
+
+        var species = new SpeciesDefinition
+        {
+            Name = "Landlubber",
+            FoodConsumptionRate = 1f,
+            ReproductionRate = 0f,
+            StarvationRate = 0f,
+            MigrationThreshold = 0f, // fully satisfied throughout — only the flee-from-water logic should move it
+        };
+        var pop = new Population { Species = species, Count = 100 };
+        river.Populations.Add(pop);
+
+        // WaterFleeThreshold is 10 ticks; run just past it
+        for (var i = 0; i < 12; i++)
+            world.Tick();
+
+        Assert.Empty(river.Populations.Where(p => p.Count > 0));
+        Assert.Equal(100, bank.Populations.Single(p => p.Count > 0).Count);
+    }
+
+    [Fact]
+    public void Tick_BriefVisitToRiverDoesNotCauseDrowning()
+    {
+        var world = new World();
+        var river = world.State.Map.GetTile(0, 0);
+        river.Terrain = TerrainType.River;
+        river.Resources.Add(AbundantFood());
+        river.Resources.Add(new ResourcePool { Type = ResourceType.Water, Amount = 10_000f, Capacity = 10_000f, RegenPerTick = 500f });
+
+        var species = new SpeciesDefinition
+        {
+            Name = "Visitor",
+            FoodConsumptionRate = 1f,
+            ReproductionRate = 0f,
+            StarvationRate = 0f,
+        };
+        var pop = new Population { Species = species, Count = 100 };
+        river.Populations.Add(pop);
+
+        // well under WaterSurvivalThreshold — a short stay should be harmless
+        for (var i = 0; i < 5; i++)
+            world.Tick();
+
+        Assert.Equal(100, pop.Count);
+    }
+
+    // ── Food stratification & ease-of-eating tests ─────────────────────────────
+
+    [Fact]
+    public void Tick_SpeciesCannotEatFoodItHasNoEaseFor()
+    {
+        var world = new World();
+        var tile  = world.State.Map.GetTile(0, 0);
+
+        // abundant Brush/Canopy but none of the Ground this species relies on
+        tile.Resources.Add(new ResourcePool { Type = ResourceType.Ground, Amount = 0f, Capacity = 1_000f, RegenPerTick = 0f });
+        tile.Resources.Add(new ResourcePool { Type = ResourceType.Brush,  Amount = 10_000f, Capacity = 10_000f, RegenPerTick = 500f });
+        tile.Resources.Add(new ResourcePool { Type = ResourceType.Canopy, Amount = 10_000f, Capacity = 10_000f, RegenPerTick = 500f });
+
+        var species = new SpeciesDefinition
+        {
+            Name = "GroundOnly",
+            FoodConsumptionRate = 1f,
+            EaseOfEating = { [ResourceType.Ground] = 5f, [ResourceType.Brush] = 0f, [ResourceType.Canopy] = 0f },
+            ReproductionRate = 0f,
+            StarvationRate = 1f,
+        };
+        var pop = new Population { Species = species, Count = 100 };
+        tile.Populations.Add(pop);
+
+        world.Tick();
+
+        Assert.Equal(0f, pop.LastSatisfaction, 3);
+        Assert.True(pop.Count < 100, "a species with zero ease for Brush/Canopy should starve despite abundant food on the same tile");
+    }
+
+    [Fact]
+    public void Tick_MigratesTowardEasierFoodOverMoreAbundantHarderFood()
+    {
+        var world = new World();
+        var home = world.State.Map.GetTile(0, 0);
+        var easy = world.State.Map.GetTile(1, 0); // less raw food, but this species can eat it easily
+        var hard = world.State.Map.GetTile(0, 1); // far more raw food, but entirely inedible to this species
+
+        home.Resources.Add(new ResourcePool { Type = ResourceType.Ground, Amount = 0f, Capacity = 100f, RegenPerTick = 0f });
+        easy.Resources.Add(new ResourcePool { Type = ResourceType.Ground, Amount = 100f, Capacity = 100f, RegenPerTick = 0f });
+        hard.Resources.Add(new ResourcePool { Type = ResourceType.Canopy, Amount = 10_000f, Capacity = 10_000f, RegenPerTick = 0f });
+
+        var species = new SpeciesDefinition
+        {
+            Name = "GroundSpecialist",
+            FoodConsumptionRate = 1f,
+            EaseOfEating = { [ResourceType.Ground] = 5f, [ResourceType.Brush] = 0f, [ResourceType.Canopy] = 0f },
+            MigrationThreshold = 0.9f,
+            StarvationRate = 0.01f,
+        };
+        var pop = new Population { Species = species, Count = 10 };
+        home.Populations.Add(pop);
+
+        world.Tick();
+
+        Assert.Empty(home.Populations.Where(p => p.Count > 0));
+        Assert.Single(easy.Populations.Where(p => p.Count > 0));
+        Assert.Empty(hard.Populations.Where(p => p.Count > 0));
+    }
+
+    [Fact]
+    public void Tick_RiverTerrainPenaltyCanMakeFoodInedible()
+    {
+        var world      = new World();
+        var riverTile  = world.State.Map.GetTile(0, 0);
+        var plainsTile = world.State.Map.GetTile(9, 9);
+        riverTile.Terrain  = TerrainType.River;
+        plainsTile.Terrain = TerrainType.Plains;
+
+        // small population and an ample pool so the density-drain multiplier stays negligible —
+        // this test isolates the terrain ease penalty, not density
+        riverTile.Resources.Add(new ResourcePool { Type = ResourceType.Ground, Amount = 1_000f, Capacity = 1_000f, RegenPerTick = 0f });
+        plainsTile.Resources.Add(new ResourcePool { Type = ResourceType.Ground, Amount = 1_000f, Capacity = 1_000f, RegenPerTick = 0f });
+
+        // ease of 1/5 on dry ground, but River's -1 penalty drops it to 0 — nothing edible while wading
+        var species = new SpeciesDefinition
+        {
+            Name = "BarelyGrazes",
+            FoodConsumptionRate = 1f,
+            EaseOfEating = { [ResourceType.Ground] = 1f, [ResourceType.Brush] = 0f, [ResourceType.Canopy] = 0f },
+            ReproductionRate = 0f,
+            StarvationRate = 1f,
+        };
+        var riverPop  = new Population { Species = species, Count = 10 };
+        var plainsPop = new Population { Species = species, Count = 10 };
+        riverTile.Populations.Add(riverPop);
+        plainsTile.Populations.Add(plainsPop);
+
+        world.Tick();
+
+        Assert.Equal(0f, riverPop.LastSatisfaction, 3);
+        Assert.Equal(1f, plainsPop.LastSatisfaction, 3);
+    }
+
+    // ── Terrain degradation tests ───────────────────────────────────────────────
+
+    [Fact]
+    public void Tick_ForestDegradesToPlainsWhenCanopySustainedlyDenuded()
+    {
+        var world = new World();
+        var tile  = world.State.Map.GetTile(0, 0);
+        tile.Terrain = TerrainType.Forest;
+        tile.Resources.Add(new ResourcePool { Type = ResourceType.Canopy, Amount = 0f, Capacity = 100f, RegenPerTick = 10f });
+
+        var species = new SpeciesDefinition
+        {
+            Name = "HeavyBrowser",
+            FoodConsumptionRate = 50f, // far more than Canopy can regen — keeps the pool denuded
+            EaseOfEating = { [ResourceType.Ground] = 0f, [ResourceType.Brush] = 0f, [ResourceType.Canopy] = 5f },
+            ReproductionRate = 0f,
+            StarvationRate = 0f,
+        };
+        tile.Populations.Add(new Population { Species = species, Count = 20 });
+
+        for (var i = 0; i < 61; i++)
+            world.Tick();
+
+        Assert.Equal(TerrainType.Plains, tile.Terrain);
+    }
+
+    [Fact]
+    public void Tick_ForestDoesNotDegradeWhenCanopyStaysHealthy()
+    {
+        var world = new World();
+        var tile  = world.State.Map.GetTile(0, 0);
+        tile.Terrain = TerrainType.Forest;
+        tile.Resources.Add(new ResourcePool { Type = ResourceType.Canopy, Amount = 10_000f, Capacity = 10_000f, RegenPerTick = 500f });
+
+        var species = new SpeciesDefinition
+        {
+            Name = "LightBrowser",
+            FoodConsumptionRate = 1f,
+            EaseOfEating = { [ResourceType.Ground] = 0f, [ResourceType.Brush] = 0f, [ResourceType.Canopy] = 5f },
+            ReproductionRate = 0f,
+            StarvationRate = 0f,
+        };
+        tile.Populations.Add(new Population { Species = species, Count = 5 });
+
+        for (var i = 0; i < 61; i++)
+            world.Tick();
+
+        Assert.Equal(TerrainType.Forest, tile.Terrain);
     }
 }

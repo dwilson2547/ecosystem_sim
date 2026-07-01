@@ -17,6 +17,43 @@ public partial class HexTile : Node2D
     private Line2D    _border = null!;
     private Label     _label  = null!;
 
+    // species with map icon art — sized so ~5 fit on a single hex tile. Add an entry here (and
+    // a processed PNG in assets/sprites/) to give another species its own map icon.
+    private const int   MaxSpeciesIcons  = 5;
+    private const float IconSize         = 20f;
+    private const float IconSpacing      = 22f;
+    private const int   CountPerIcon     = 20; // individuals represented by each icon, capped at MaxSpeciesIcons
+
+    private static readonly Dictionary<string, string> IconPaths = new()
+    {
+        ["Alamosaurus"] = "res://assets/sprites/alamosaurus.png",
+        ["Triceratops"] = "res://assets/sprites/triceratops.png",
+    };
+
+    private static readonly Dictionary<string, Texture2D> _iconCache = new();
+
+    private static Texture2D? IconFor(string rootName)
+    {
+        if (!IconPaths.TryGetValue(rootName, out var path)) return null;
+        if (!_iconCache.TryGetValue(rootName, out var tex))
+            _iconCache[rootName] = tex = GD.Load<Texture2D>(path);
+        return tex;
+    }
+
+    // 1-5 icon cluster layouts (offsets from tile center), a 3-over-2 pentagon pattern at 5
+    private static readonly Vector2[][] IconLayouts =
+    [
+        [Vector2.Zero],
+        [new Vector2(-IconSpacing / 2, 0), new Vector2(IconSpacing / 2, 0)],
+        [new Vector2(-IconSpacing / 2, -IconSpacing / 2), new Vector2(IconSpacing / 2, -IconSpacing / 2), new Vector2(0, IconSpacing / 2)],
+        [new Vector2(-IconSpacing / 2, -IconSpacing / 2), new Vector2(IconSpacing / 2, -IconSpacing / 2), new Vector2(-IconSpacing / 2, IconSpacing / 2), new Vector2(IconSpacing / 2, IconSpacing / 2)],
+        [new Vector2(-IconSpacing, -IconSpacing / 2), new Vector2(0, -IconSpacing / 2), new Vector2(IconSpacing, -IconSpacing / 2), new Vector2(-IconSpacing / 2, IconSpacing / 2), new Vector2(IconSpacing / 2, IconSpacing / 2)],
+    ];
+
+    // one shared pool of icon sprites, reused for whichever species is dominant on this tile
+    // (only one species is ever dominant at a time, so no need for a pool per species)
+    private readonly List<Sprite2D> _speciesIcons = [];
+
     public override void _Ready()
     {
         // pointy-top hexagon: first vertex at -30° (top-right), stepping 60° clockwise
@@ -47,6 +84,13 @@ public partial class HexTile : Node2D
         _label.AddThemeFontSizeOverride("font_size", (int)(HexSize * 0.28f));
         AddChild(_label);
 
+        for (var i = 0; i < MaxSpeciesIcons; i++)
+        {
+            var sprite = new Sprite2D { Visible = false };
+            AddChild(sprite);
+            _speciesIcons.Add(sprite);
+        }
+
         Refresh();
     }
 
@@ -72,9 +116,37 @@ public partial class HexTile : Node2D
             .OrderByDescending(p => p.Count)
             .FirstOrDefault();
 
-        _label.Text = dominant is not null
-            ? $"{dominant.Species.Name[0]}\n{dominant.Count}"
-            : string.Empty;
+        // species with icon art render as a repeated icon (quantity = icon count) instead of
+        // text; every other species keeps the letter+count label until they get their own art
+        var icon = dominant is not null ? IconFor(dominant.Species.EffectiveRootName) : null;
+
+        if (icon is not null)
+        {
+            _label.Text = string.Empty;
+
+            var iconCount = Mathf.Clamp(Mathf.CeilToInt((float)dominant!.Count / CountPerIcon), 1, MaxSpeciesIcons);
+            var layout    = IconLayouts[iconCount - 1];
+            var scale     = new Vector2(IconSize / icon.GetWidth(), IconSize / icon.GetHeight());
+
+            for (var i = 0; i < _speciesIcons.Count; i++)
+            {
+                var visible = i < iconCount;
+                _speciesIcons[i].Visible = visible;
+                if (!visible) continue;
+
+                _speciesIcons[i].Texture  = icon;
+                _speciesIcons[i].Scale    = scale;
+                _speciesIcons[i].Position = layout[i];
+            }
+        }
+        else
+        {
+            foreach (var sprite in _speciesIcons) sprite.Visible = false;
+
+            _label.Text = dominant is not null
+                ? $"{dominant.Species.Name[0]}\n{dominant.Count}"
+                : string.Empty;
+        }
     }
 
     private static Color TerrainColor(TerrainType t) => t switch

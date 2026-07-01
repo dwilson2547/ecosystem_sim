@@ -55,8 +55,9 @@ and after.
 
 | Trait | How it scales |
 |-------|---------------|
-| `ConsumptionRates[Food]` | `× sizeIndex` |
-| `ConsumptionRates[Water]` | unchanged |
+| `FoodConsumptionRate` | `× sizeIndex` |
+| `WaterConsumptionRate` | unchanged |
+| `EaseOfEating` | unchanged (copied) — evolving size doesn't change what a species can eat |
 | `CombatStrength` | `× √sizeIndex` (matches `EffectiveCombatStrength` formula) |
 | `ReproductionRate` | `÷ √sizeIndex` — larger = slower (K-strategy) |
 | `StarvationRate` | unchanged |
@@ -80,9 +81,10 @@ Subsequent evolution is relative to the new species' baseline.
 ## What doesn't change at speciation
 
 **`Faction.PrimarySpecies`** is not updated when a faction's populations speciate. The
-faction retains its original species' `WarAggression` and `ConsumptionRates` for all diplomacy
-calculations (`ResourceCompetitionPressure`, aggression factor). This is intentional — a
-faction's cultural character doesn't shift just because individual animals evolved.
+faction retains its original species' `WarAggression` and `FoodConsumptionRate`/
+`WaterConsumptionRate` for all diplomacy calculations (`ResourceCompetitionPressure`, aggression
+factor). This is intentional — a faction's cultural character doesn't shift just because
+individual animals evolved.
 
 Consequence: two factions of "Greater Triceratops" and "Lesser Triceratops" (both derived from
 base Triceratops) will have their diplomatic pressure calculated using the *base Triceratops*

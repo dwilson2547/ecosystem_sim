@@ -10,8 +10,27 @@ public class SpeciesDefinition
     // the root of the lineage, used for naming derived species
     public string EffectiveRootName => RootName ?? Name;
 
-    // resource consumed per individual per tick — add new ResourceType values to extend
-    public Dictionary<ResourceType, float> ConsumptionRates { get; init; } = [];
+    // aggregate food demand per individual per tick. Split across the Ground/Brush/Canopy
+    // strata at consumption time based on EaseOfEating × what's actually available on the tile —
+    // see World.DistributeFood.
+    public float FoodConsumptionRate { get; init; }
+
+    // water consumed per individual per tick. Unaffected by SizeIndex — see Population.EffectiveWaterDemand.
+    public float WaterConsumptionRate { get; init; }
+
+    // how easily this species can eat from each food stratum, on a 0 (can't at all) to 5 (trivial)
+    // scale — mirrors the readme's ease-of-eating table. Strata left unset default to 5 (a
+    // generalist that can eat anything), so species that don't care about diet specialization
+    // behave exactly as before this system existed.
+    public Dictionary<ResourceType, float> EaseOfEating { get; init; } = [];
+
+    // ease-of-eating for a stratum on a given terrain, normalized to 0-1. Terrain can make eating
+    // harder (e.g. River) regardless of the species' innate skill at that stratum.
+    public float EffectiveEase(ResourceType stratum, TerrainType terrain)
+    {
+        var baseEase = EaseOfEating.TryGetValue(stratum, out var ease) ? ease : 5f;
+        return Math.Clamp(baseEase - TerrainStats.EaseOfEatingPenalty(terrain), 0f, 5f) / 5f;
+    }
 
     // fractional population growth per tick when fully satisfied
     public float ReproductionRate { get; init; } = 0.02f;
