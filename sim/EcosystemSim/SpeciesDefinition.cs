@@ -13,6 +13,13 @@ public class SpeciesDefinition
     // resource consumed per individual per tick — add new ResourceType values to extend
     public Dictionary<ResourceType, float> ConsumptionRates { get; init; } = [];
 
+    // food subtypes this species actively seeks (full satisfaction when eating these)
+    // empty = eats any food pool at full satisfaction (backward-compat for untyped species)
+    public HashSet<FoodSubtype> FoodPreferences { get; init; } = [];
+
+    // food subtypes this species will eat if preferred food is scarce (2/3 satisfaction)
+    public HashSet<FoodSubtype> AcceptedFoods { get; init; } = [];
+
     // fractional population growth per tick when fully satisfied
     public float ReproductionRate { get; init; } = 0.02f;
 

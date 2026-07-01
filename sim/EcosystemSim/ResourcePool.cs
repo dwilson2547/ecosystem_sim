@@ -3,6 +3,8 @@ namespace EcosystemSim;
 public class ResourcePool
 {
     public required ResourceType Type { get; init; }
+    // set for food pools with a specific subtype; null for generic/legacy food pools
+    public FoodSubtype? FoodSubtype { get; init; }
     public float Amount { get; set; }
     public float Capacity { get; set; }
     public float RegenPerTick { get; set; }

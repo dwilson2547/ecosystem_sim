@@ -2,7 +2,10 @@ namespace EcosystemSim;
 
 public class World
 {
-    public WorldState State { get; } = new();
+    public WorldState State { get; }
+
+    public World() { State = new WorldState(); }
+    public World(int width, int height) { State = new WorldState { Map = new WorldMap(width, height) }; }
 
     public void Tick()
     {
@@ -84,28 +87,153 @@ public class World
         foreach (var pop in tile.Populations)
             pop.LastSatisfaction = pop.Count > 0 ? 1f : 0f;
 
-        foreach (var resourceType in Enum.GetValues<ResourceType>())
+        DistributeWater(tile);
+        DistributeFood(tile);
+    }
+
+    private static void DistributeWater(Tile tile)
+    {
+        var pool = tile.Resources.FirstOrDefault(r => r.Type == ResourceType.Water);
+
+        var demands = tile.Populations
+            .Select(p => (pop: p, demand: p.Count * p.EffectiveConsumptionRate(ResourceType.Water)))
+            .ToList();
+
+        var totalDemand = demands.Sum(d => d.demand);
+        if (totalDemand == 0) return;
+
+        var supplyRatio = pool is not null ? Math.Min(pool.Amount / totalDemand, 1f) : 0f;
+
+        foreach (var (pop, demand) in demands)
         {
-            var pool = tile.Resources.FirstOrDefault(r => r.Type == resourceType);
+            if (demand == 0) continue;
+            var received = demand * supplyRatio;
+            pool?.Consume(received);
+            pop.LastSatisfaction = Math.Min(pop.LastSatisfaction, received / demand);
+        }
+    }
 
-            var demands = tile.Populations
-                .Select(p => (pop: p, demand: p.Count * p.EffectiveConsumptionRate(resourceType)))
-                .ToList();
+    private const float AcceptedFoodValue = 2f / 3f;
 
-            var totalDemand = demands.Sum(d => d.demand);
+    private static void DistributeFood(Tile tile)
+    {
+        var consumers = tile.Populations
+            .Where(p => p.Count > 0 && p.Species.ConsumptionRates.ContainsKey(ResourceType.Food))
+            .ToList();
+        if (consumers.Count == 0) return;
+
+        var foodPools = tile.Resources.Where(r => r.Type == ResourceType.Food).ToList();
+
+        if (foodPools.Count == 0)
+        {
+            // no food anywhere on this tile — all food-eaters starve
+            foreach (var pop in consumers)
+                pop.LastSatisfaction = 0f;
+            return;
+        }
+
+        bool anyTyped       = foodPools.Any(r => r.FoodSubtype.HasValue);
+        bool anyPreferences = consumers.Any(p => p.Species.FoodPreferences.Count > 0);
+
+        if (!anyTyped || !anyPreferences)
+        {
+            // legacy path: single generic pool, all consumers compete equally
+            DistributeGenericFood(tile, foodPools.FirstOrDefault(r => !r.FoodSubtype.HasValue) ?? foodPools[0]);
+            return;
+        }
+
+        DistributeTypedFood(tile, foodPools, consumers);
+    }
+
+    private static void DistributeGenericFood(Tile tile, ResourcePool pool)
+    {
+        var demands = tile.Populations
+            .Select(p => (pop: p, demand: p.Count * p.EffectiveConsumptionRate(ResourceType.Food)))
+            .ToList();
+
+        var totalDemand = demands.Sum(d => d.demand);
+        if (totalDemand == 0) return;
+
+        var supplyRatio = Math.Min(pool.Amount / totalDemand, 1f);
+
+        foreach (var (pop, demand) in demands)
+        {
+            if (demand == 0) continue;
+            var received = demand * supplyRatio;
+            pool.Consume(received);
+            pop.LastSatisfaction = Math.Min(pop.LastSatisfaction, received / demand);
+        }
+    }
+
+    private static void DistributeTypedFood(Tile tile, List<ResourcePool> foodPools, List<Population> consumers)
+    {
+        var foodDemand        = consumers.ToDictionary(p => p, p => p.Count * p.EffectiveConsumptionRate(ResourceType.Food));
+        var effectiveReceived = consumers.ToDictionary(p => p, _ => 0f);
+
+        float RemainingDemand(Population p) => Math.Max(0f, foodDemand[p] - effectiveReceived[p]);
+
+        // pass 1: preferred food — full satisfaction value
+        foreach (var pool in foodPools)
+        {
+            var subtype = pool.FoodSubtype;
+
+            var eligible = consumers.Where(p =>
+                p.Species.FoodPreferences.Count == 0 ||
+                (subtype.HasValue && p.Species.FoodPreferences.Contains(subtype.Value))
+            ).ToList();
+
+            if (eligible.Count == 0) continue;
+
+            var totalDemand = eligible.Sum(RemainingDemand);
             if (totalDemand == 0) continue;
 
-            var supplyRatio = pool is not null ? Math.Min(pool.Amount / totalDemand, 1f) : 0f;
+            var supplyRatio = Math.Min(1f, pool.Amount / totalDemand);
 
-            foreach (var (pop, demand) in demands)
+            foreach (var pop in eligible)
             {
-                if (demand == 0) continue;
-
+                var demand = RemainingDemand(pop);
+                if (demand <= 0) continue;
                 var received = demand * supplyRatio;
-                pool?.Consume(received);
-
-                pop.LastSatisfaction = Math.Min(pop.LastSatisfaction, received / demand);
+                pool.Consume(received);
+                effectiveReceived[pop] += received;
             }
+        }
+
+        // pass 2: accepted food — 2/3 satisfaction value, only for pops still hungry
+        foreach (var pool in foodPools)
+        {
+            if (!pool.FoodSubtype.HasValue) continue;
+            var subtype = pool.FoodSubtype.Value;
+
+            var eligible = consumers.Where(p =>
+                p.Species.FoodPreferences.Count > 0 &&
+                !p.Species.FoodPreferences.Contains(subtype) &&
+                p.Species.AcceptedFoods.Contains(subtype) &&
+                RemainingDemand(p) > 0
+            ).ToList();
+
+            if (eligible.Count == 0) continue;
+
+            var totalDemand = eligible.Sum(RemainingDemand);
+            if (totalDemand == 0) continue;
+
+            var supplyRatio = Math.Min(1f, pool.Amount / totalDemand);
+
+            foreach (var pop in eligible)
+            {
+                var demand = RemainingDemand(pop);
+                if (demand <= 0) continue;
+                var received = demand * supplyRatio;
+                pool.Consume(received);
+                effectiveReceived[pop] += received * AcceptedFoodValue;
+            }
+        }
+
+        foreach (var pop in consumers)
+        {
+            var demand = foodDemand[pop];
+            if (demand == 0) continue;
+            pop.LastSatisfaction = Math.Min(pop.LastSatisfaction, Math.Min(1f, effectiveReceived[pop] / demand));
         }
     }
 
@@ -144,12 +272,12 @@ public class World
                 var lacking = MostLackingResource(pop, tile);
                 if (lacking is null) continue;
 
-                var destination = BestNeighborFor(tile, lacking.Value);
+                var destination = BestNeighborFor(pop, tile, lacking.Value);
                 if (destination is null) continue;
 
                 // only move the individuals that exceed the tile's sustainable capacity;
                 // the rest stay and consume what's available rather than abandoning the tile
-                var sustainable = SustainableCount(pop, tile, lacking.Value);
+                var sustainable = SustainableCount(pop, tile);
                 var migrants    = pop.Count - sustainable;
                 if (migrants <= 0) continue;
 
@@ -178,15 +306,28 @@ public class World
         }
     }
 
-    // Returns how many individuals of pop the tile can sustainably support based on regen.
-    private int SustainableCount(Population pop, Tile tile, ResourceType lacking)
+    // Returns how many individuals of pop the tile can sustainably support across all consumed resources.
+    private int SustainableCount(Population pop, Tile tile)
     {
-        var pool = tile.Resources.FirstOrDefault(r => r.Type == lacking);
-        if (pool is null) return 0;
-        var rate = pop.EffectiveConsumptionRate(lacking);
-        if (rate <= 0f) return pop.Count;
-        var effectiveRegen = pool.RegenPerTick * SeasonMultiplier(State.CurrentSeason, lacking);
-        return (int)Math.Floor(effectiveRegen / rate);
+        var sustainable = pop.Count;
+        foreach (var (type, _) in pop.Species.ConsumptionRates)
+        {
+            var rate = pop.EffectiveConsumptionRate(type);
+            if (rate <= 0) continue;
+
+            float effectiveRegen;
+            if (type == ResourceType.Food)
+                effectiveRegen = EffectiveFoodRegen(tile, pop.Species);
+            else
+            {
+                var pool = tile.Resources.FirstOrDefault(r => r.Type == type);
+                effectiveRegen = (pool?.RegenPerTick ?? 0f) * SeasonMultiplier(State.CurrentSeason, type);
+            }
+
+            var count = (int)Math.Floor(effectiveRegen / rate);
+            sustainable = Math.Min(sustainable, count);
+        }
+        return sustainable;
     }
 
     // Creates a new Population by splitting count individuals off of source.
@@ -507,6 +648,8 @@ public class World
             RootName         = parent.EffectiveRootName,
             ConsumptionRates = newConsumption,
             ByproductRates   = newByproducts,
+            FoodPreferences  = parent.FoodPreferences,
+            AcceptedFoods    = parent.AcceptedFoods,
             CombatStrength   = parent.CombatStrength   * MathF.Sqrt(sizeIndex),
             ReproductionRate = parent.ReproductionRate / MathF.Sqrt(sizeIndex), // larger → slower repro
             StarvationRate   = parent.StarvationRate,
@@ -652,17 +795,21 @@ public class World
                         Math.Abs((-aq - ar) - (-bq - br)));
     }
 
-    private static ResourceType? MostLackingResource(Population pop, Tile tile)
+    private ResourceType? MostLackingResource(Population pop, Tile tile)
     {
         ResourceType? worst = null;
         var worstRatio = float.MaxValue;
 
-        foreach (var resourceType in pop.Species.ConsumptionRates.Keys)
+        foreach (var (resourceType, _) in pop.Species.ConsumptionRates)
         {
             var effectiveRate = pop.EffectiveConsumptionRate(resourceType);
             if (effectiveRate == 0) continue;
-            var pool = tile.Resources.FirstOrDefault(r => r.Type == resourceType);
-            var ratio = pool is null ? 0f : pool.Amount / (pop.Count * effectiveRate);
+
+            float available = resourceType == ResourceType.Food
+                ? EffectiveFoodAmount(tile, pop.Species)
+                : tile.Resources.FirstOrDefault(r => r.Type == resourceType)?.Amount ?? 0f;
+
+            var ratio = available / (pop.Count * effectiveRate);
             if (ratio < worstRatio)
             {
                 worstRatio = ratio;
@@ -673,18 +820,20 @@ public class World
         return worst;
     }
 
-    private Tile? BestNeighborFor(Tile current, ResourceType resourceType)
+    private Tile? BestNeighborFor(Population pop, Tile current, ResourceType resourceType)
     {
-        const int MaxSearchDepth = 6; // maximum tile distance to search for a resource source
+        const int MaxSearchDepth = 6;
 
-        var currentAmount = ResourceAmount(current, resourceType);
-        var neighbors     = State.Map.GetNeighbors(current).ToList();
+        var currentAmount = EffectiveTileAmount(pop, current, resourceType);
+        var neighbors     = State.Map.GetNeighbors(current)
+            .Where(n => TerrainStats.SameBiome(current.Terrain, n.Terrain))
+            .ToList();
 
         // primary: immediate neighbor with strictly more of the resource
         // tiebreak on migration cost so populations naturally avoid swamp/highland when routes are similar
         var immediate = neighbors
-            .Where(n => ResourceAmount(n, resourceType) > currentAmount)
-            .OrderByDescending(n => ResourceAmount(n, resourceType))
+            .Where(n => EffectiveTileAmount(pop, n, resourceType) > currentAmount)
+            .OrderByDescending(n => EffectiveTileAmount(pop, n, resourceType))
             .ThenBy(n => TerrainStats.MigrationCostOf(n.Terrain))
             .FirstOrDefault();
 
@@ -701,17 +850,56 @@ public class World
             var (tile, firstStep) = queue.Dequeue();
             if (HexDistance(tile, current) > MaxSearchDepth) continue;
 
-            if (ResourceAmount(tile, resourceType) > currentAmount)
+            if (EffectiveTileAmount(pop, tile, resourceType) > currentAmount)
                 return firstStep;
 
-            foreach (var next in State.Map.GetNeighbors(tile))
+            foreach (var next in State.Map.GetNeighbors(tile)
+                .Where(n => TerrainStats.SameBiome(current.Terrain, n.Terrain)))
+            {
                 if (visited.Add(next))
                     queue.Enqueue((next, firstStep));
+            }
         }
 
         return null;
     }
 
-    private static float ResourceAmount(Tile tile, ResourceType type) =>
-        tile.Resources.FirstOrDefault(r => r.Type == type)?.Amount ?? 0f;
+    private float EffectiveTileAmount(Population pop, Tile tile, ResourceType type) =>
+        type == ResourceType.Food
+            ? EffectiveFoodAmount(tile, pop.Species)
+            : tile.Resources.FirstOrDefault(r => r.Type == type)?.Amount ?? 0f;
+
+    // Total food amount on a tile, weighted by species' food preferences.
+    private static float EffectiveFoodAmount(Tile tile, SpeciesDefinition species)
+    {
+        float total = 0f;
+        foreach (var pool in tile.Resources.Where(r => r.Type == ResourceType.Food))
+        {
+            if (!pool.FoodSubtype.HasValue || species.FoodPreferences.Count == 0)
+                total += pool.Amount;
+            else if (species.FoodPreferences.Contains(pool.FoodSubtype.Value))
+                total += pool.Amount;
+            else if (species.AcceptedFoods.Contains(pool.FoodSubtype.Value))
+                total += pool.Amount * AcceptedFoodValue;
+        }
+        return total;
+    }
+
+    // Total food regen per tick on a tile, weighted by species' food preferences and season.
+    private float EffectiveFoodRegen(Tile tile, SpeciesDefinition species)
+    {
+        var seasonMult = SeasonMultiplier(State.CurrentSeason, ResourceType.Food);
+        float total = 0f;
+        foreach (var pool in tile.Resources.Where(r => r.Type == ResourceType.Food))
+        {
+            var regen = pool.RegenPerTick * seasonMult;
+            if (!pool.FoodSubtype.HasValue || species.FoodPreferences.Count == 0)
+                total += regen;
+            else if (species.FoodPreferences.Contains(pool.FoodSubtype.Value))
+                total += regen;
+            else if (species.AcceptedFoods.Contains(pool.FoodSubtype.Value))
+                total += regen * AcceptedFoodValue;
+        }
+        return total;
+    }
 }
