@@ -141,6 +141,36 @@ The simulation engine code is in `sim/EcosystemSim/`. The tests are in `sim/Ecos
 
 ---
 
+## 8. Install Godot 4.7 (game frontend only)
+
+The simulation engine (`sim/`) runs without Godot. You only need this if you want to run or edit
+the game UI in `godot/`.
+
+Download the **Godot 4.7 Mono** build (the `.NET` variant) from https://godotengine.org/download.
+
+### Linux / WSL
+
+```bash
+mkdir -p ~/tools/godot
+cd ~/tools/godot
+# download the mono build, e.g.:
+wget https://github.com/godotengine/godot/releases/download/4.7-stable/Godot_v4.7-stable_mono_linux_x86_64.zip
+unzip Godot_v4.7-stable_mono_linux_x86_64.zip
+chmod +x Godot_v4.7-stable_mono_linux_x86_64/Godot_v4.7-stable_mono_linux.x86_64
+```
+
+**On WSL**, always launch from the terminal — the editor's embedded Game panel does not forward
+input correctly on WSL2:
+
+```bash
+~/tools/godot/Godot_v4.7-stable_mono_linux_x86_64/Godot_v4.7-stable_mono_linux.x86_64 \
+    --path /path/to/ecosystem_sim/godot
+```
+
+Godot will compile the C# project automatically on first open (requires .NET 8 SDK from step 3).
+
+---
+
 ## Day-to-day workflow
 
 Get the latest code before you start working:

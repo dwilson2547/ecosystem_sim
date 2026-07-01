@@ -5,8 +5,8 @@ trade byproducts, evolve, catch diseases, and migrate across a tile-based world.
 a god-figure who seeds the world and intervenes in real time. All behavior is emergent — nothing
 is scripted.
 
-**Current state:** engine-complete simulation library with a terminal UI prototype. No game engine
-yet (Godot/Unity integration is next). Everything interesting is in `sim/`.
+**Current state:** engine-complete simulation library + Godot 4.7 frontend scaffold. Terminal
+prototype (`SimConsole`) still works but the real UI is in `godot/`.
 
 ---
 
@@ -14,19 +14,35 @@ yet (Godot/Unity integration is next). Everything interesting is in `sim/`.
 
 - **Language:** C# 12, .NET 8
 - **Engine layer:** `EcosystemSim` — a class library, zero UI dependencies, engine-agnostic
-- **Tests:** xUnit 3, `EcosystemSim.Tests` — 49 tests, run `dotnet test` from `sim/`
-- **Console UI:** `SimConsole` — stop-gap terminal renderer while we wait for a game engine
+- **Tests:** xUnit 3, `EcosystemSim.Tests` — 54 tests, run `dotnet test` from `sim/`
+- **Console UI:** `SimConsole` — terminal renderer / prototype; run from `sim/`
+- **Game UI:** Godot 4.7 (.NET), lives in `godot/`; references `EcosystemSim` via ProjectReference
 
 ---
 
 ## Solution structure
 
 ```
+godot/                      # Godot 4.7 game frontend
+├── project.godot           # Godot config (autoloads, display)
+├── EcosystemGame.csproj    # C# project referencing EcosystemSim
+├── scenes/Main.tscn        # Root scene (Node2D + SimMain.cs)
+└── scripts/
+    ├── SimManager.cs       # Autoload singleton: owns World, drives tick timer
+    ├── DemoWorldSeeder.cs  # Creates the demo world for the Godot build
+    ├── SimMain.cs          # Root node: spawns camera, renderer, HUD, FactionPanel, TileInfoPanel
+    ├── HexMapRenderer.cs   # Instantiates HexTile × 100; PixelToTile + SelectTile
+    ├── HexTile.cs          # One hex cell: Polygon2D terrain + pop Label + selection border
+    ├── CameraController.cs # Camera2D: MMB-drag pan, scroll-wheel zoom
+    ├── HUD.cs              # Tick / season / year / speed overlay
+    ├── FactionPanel.cs     # Left-side panel: faction list, population summaries, relations
+    └── TileInfoPanel.cs    # Right-side panel: terrain, resources, population details
+
 sim/
 ├── EcosystemSim/           # The simulation engine (class library)
 │   ├── World.cs            # Main tick loop + all system logic
 │   ├── WorldState.cs       # Snapshot: tick, season, map, factions
-│   ├── WorldMap.cs         # 10×10 tile grid, cardinal neighbor adjacency
+│   ├── WorldMap.cs         # 10×10 tile grid, 6-way hex neighbor adjacency (odd-r offset)
 │   ├── Tile.cs             # One map cell: terrain, resources, populations, byproducts
 │   ├── Population.cs       # A live group of one species on one tile
 │   ├── SpeciesDefinition.cs # Species blueprint (traits, consumption, byproduct rates)
@@ -42,7 +58,7 @@ sim/
 │   └── *Command.cs         # IWorldCommand implementations for player interventions
 │
 ├── EcosystemSim.Tests/     # xUnit tests
-│   └── WorldTests.cs       # 49 tests; isolated worlds, no seeder dependency
+│   └── WorldTests.cs       # 54 tests; isolated worlds, no seeder dependency
 │
 └── SimConsole/             # Terminal prototype
     ├── Program.cs          # Input loop + tick scheduling
@@ -56,11 +72,14 @@ sim/
 
 ```bash
 cd sim
-dotnet test           # run all 49 tests
-dotnet run --project SimConsole   # run the terminal sim
+dotnet test                        # run all 54 tests
+dotnet run --project SimConsole    # terminal prototype
 ```
 
-Controls: `[Space]` pause, `[← →]` speed, `[D]` trigger disease, `[T]` toggle trade, `[Q]` quit.
+SimConsole controls: `[Space]` pause, `[← →]` speed, `[D]` disease, `[T]` trade, `[Q]` quit.
+
+Godot: open `godot/project.godot` in Godot 4.7. Controls: `Space` pause, `+`/`-` speed,
+middle-mouse drag to pan, scroll to zoom. See `docs/godot-frontend.md` for full details.
 
 ---
 
@@ -194,13 +213,13 @@ what it needs on specific tiles. Key helpers in `WorldTests.cs`:
 
 ## What's next
 
-1. **Food type diversity** — distinct food subtypes (browse, graze, fruit) with per-terrain
+1. **Godot frontend polish** — disease/trade hotkeys, population history graphs
+2. **Food type diversity** — distinct food subtypes (browse, graze, fruit) with per-terrain
    availability and per-species preferences; will get its own doc (`docs/food-types.md`)
-2. **Godot/Unity frontend** — the engine library is designed to be UI-agnostic; the frontend
-   drives it by calling `world.Tick()` and `world.Apply(command)` on its own schedule
-3. **Player interventions** — meteor strike, terraforming, population seeding mid-run
-4. **More terrain effects** — elevation (combat advantage), climate zones
+3. **Procedural map generation** — rivers, biomes, mountain ranges; replaces the hardcoded
+   10×10 terrain string in `WorldSeeder`
+4. **Player interventions** — meteor strike, terraforming, population seeding mid-run
 5. **Faction memory** — grudges, reputation, vassal relationships
 
-See `docs/systems-design.md` for the full aspirational design and `docs/implementation.md`
-for detailed mechanics of every implemented system.
+See `docs/implementation.md` for mechanics of every implemented system and
+`docs/godot-frontend.md` for the Godot project architecture.

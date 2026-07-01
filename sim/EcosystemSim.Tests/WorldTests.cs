@@ -650,20 +650,22 @@ public class WorldTests
     }
 
     [Fact]
-    public void Map_NeighborsAreCardinalOnly()
+    public void Map_NeighborsAreHexagonal()
     {
+        // center of 3×3 at odd row (1,1): all six hex neighbors are in-bounds
         var map = new WorldMap(3, 3);
         var center = map.GetTile(1, 1);
         var neighbors = map.GetNeighbors(center).ToList();
 
-        Assert.Equal(4, neighbors.Count);
-        Assert.DoesNotContain(map.GetTile(0, 0), neighbors); // diagonal excluded
+        Assert.Equal(6, neighbors.Count);
+        Assert.DoesNotContain(map.GetTile(0, 0), neighbors); // true diagonal — not a hex neighbor
         Assert.DoesNotContain(map.GetTile(1, 1), neighbors); // self excluded
     }
 
     [Fact]
     public void Map_CornerTileHasTwoNeighbors()
     {
+        // (0,0) even row: only E=(1,0) and SE=(0,1) are in-bounds
         var map = new WorldMap(3, 3);
         var neighbors = map.GetNeighbors(0, 0).ToList();
         Assert.Equal(2, neighbors.Count);

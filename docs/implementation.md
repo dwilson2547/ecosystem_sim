@@ -43,7 +43,8 @@ testing trivial and makes frontend integration straightforward — just call `Ti
 9. `ExecuteTrade` — byproduct equalization between trading faction pairs
 10. `UpdateFactionRelations` — tension delta, state transitions
 11. `ApplyEvolution` — size and immunity pressure accumulators
-12. `State.Tick++` then `AdvanceSeason()`
+12. `ApplySpeciation` — fork populations that crossed size thresholds into derived species
+13. `State.Tick++` then `AdvanceSeason()`
 
 **Why this order matters:**
 - Resources are distributed *before* growth so death/growth reflects current food access

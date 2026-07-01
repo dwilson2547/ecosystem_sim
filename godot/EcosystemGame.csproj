@@ -1,0 +1,13 @@
+<Project Sdk="Godot.NET.Sdk/4.7.0">
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <RootNamespace>EcosystemGame</RootNamespace>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- reference the engine library directly — no DLL copy step needed -->
+    <ProjectReference Include="../sim/EcosystemSim/EcosystemSim.csproj" />
+  </ItemGroup>
+</Project>

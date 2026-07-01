@@ -1,0 +1,10 @@
+# Godot cache and editor metadata
+.godot/
+*.import
+.mono/
+mono_crash.*.json
+
+# Build artifacts
+bin/
+obj/
+*.user

@@ -14,3 +14,7 @@ export_presets.cfg
 # OS
 .DS_Store
 Thumbs.db
+
+# Scratch / downloads
+*.zip
+kill_log.txt

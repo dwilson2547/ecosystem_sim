@@ -132,7 +132,7 @@ public class World
     private void Migrate()
     {
         // collect all moves before applying so relocations don't cascade within one tick
-        var moves = new List<(Population pop, Tile from, Tile to)>();
+        var moves = new List<(Population pop, int migrantCount, Tile from, Tile to)>();
 
         foreach (var tile in State.Map.AllTiles())
         {
@@ -145,30 +145,96 @@ public class World
                 if (lacking is null) continue;
 
                 var destination = BestNeighborFor(tile, lacking.Value);
-                if (destination is not null)
-                    moves.Add((pop, tile, destination));
+                if (destination is null) continue;
+
+                // only move the individuals that exceed the tile's sustainable capacity;
+                // the rest stay and consume what's available rather than abandoning the tile
+                var sustainable = SustainableCount(pop, tile, lacking.Value);
+                var migrants    = pop.Count - sustainable;
+                if (migrants <= 0) continue;
+
+                moves.Add((pop, migrants, tile, destination));
             }
         }
 
-        foreach (var (pop, from, to) in moves)
+        foreach (var (pop, migrantCount, from, to) in moves)
         {
-            from.RemovePopulation(pop);
+            Population mover;
 
-            // only merge with populations from the same faction (or unfactioned same-species)
-            var existing = to.Populations.FirstOrDefault(p =>
-                p.Species == pop.Species && (pop.Faction is null || p.Faction == pop.Faction));
-
-            if (existing is not null)
+            if (migrantCount >= pop.Count)
             {
-                // blend evolved traits weighted by count before merging
-                var total = (float)(existing.Count + pop.Count);
-                existing.SizeIndex     = (existing.SizeIndex     * existing.Count + pop.SizeIndex     * pop.Count) / total;
-                existing.ImmunityDelta = (existing.ImmunityDelta * existing.Count + pop.ImmunityDelta * pop.Count) / total;
-                existing.SizePressure  = (existing.SizePressure  * existing.Count + pop.SizePressure  * pop.Count) / total;
-                existing.Count += pop.Count;
+                // entire group leaves (sustainable == 0, e.g. resource absent)
+                from.RemovePopulation(pop);
+                mover = pop;
             }
             else
-                to.AddPopulation(pop);
+            {
+                // partial migration: leave the sustainable portion in place, fork the excess
+                pop.Count -= migrantCount;
+                mover      = ForkFrom(pop, migrantCount);
+            }
+
+            PlaceOrMerge(mover, to);
+        }
+    }
+
+    // Returns how many individuals of pop the tile can sustainably support based on regen.
+    private int SustainableCount(Population pop, Tile tile, ResourceType lacking)
+    {
+        var pool = tile.Resources.FirstOrDefault(r => r.Type == lacking);
+        if (pool is null) return 0;
+        var rate = pop.EffectiveConsumptionRate(lacking);
+        if (rate <= 0f) return pop.Count;
+        var effectiveRegen = pool.RegenPerTick * SeasonMultiplier(State.CurrentSeason, lacking);
+        return (int)Math.Floor(effectiveRegen / rate);
+    }
+
+    // Creates a new Population by splitting count individuals off of source.
+    // The fork inherits all evolved state; faction registration and tile placement are caller's job.
+    private static Population ForkFrom(Population source, int count)
+    {
+        var fork = new Population
+        {
+            Species         = source.Species,
+            Count           = count,
+            SizeIndex       = source.SizeIndex,
+            SizePressure    = source.SizePressure,
+            ImmunityDelta   = source.ImmunityDelta,
+            ImmunityPressure = source.ImmunityPressure,
+            Disease         = source.Disease,
+            InfectionLevel  = source.InfectionLevel,
+        };
+        fork.Faction = source.Faction; // internal set; faction list entry deferred to PlaceOrMerge
+        return fork;
+    }
+
+    // Places pop on destination, merging into any compatible existing population.
+    // Handles faction list bookkeeping for both full-migration and fork cases.
+    private void PlaceOrMerge(Population pop, Tile destination)
+    {
+        var existing = destination.Populations.FirstOrDefault(p =>
+            p != pop && p.Count > 0 &&
+            p.Species == pop.Species &&
+            (pop.Faction is null || p.Faction == pop.Faction));
+
+        if (existing is not null)
+        {
+            var total = (float)(existing.Count + pop.Count);
+            existing.SizeIndex     = (existing.SizeIndex     * existing.Count + pop.SizeIndex     * pop.Count) / total;
+            existing.ImmunityDelta = (existing.ImmunityDelta * existing.Count + pop.ImmunityDelta * pop.Count) / total;
+            existing.SizePressure  = (existing.SizePressure  * existing.Count + pop.SizePressure  * pop.Count) / total;
+            existing.Count += pop.Count;
+
+            // pop is absorbed: remove from faction list if it was registered there
+            // (full-migration case); forks were never added so Remove is a no-op
+            pop.Faction?.Populations.Remove(pop);
+        }
+        else
+        {
+            // fork case: register with faction before placing on tile
+            if (pop.Faction is not null && !pop.Faction.Populations.Contains(pop))
+                pop.Faction.Populations.Add(pop);
+            destination.AddPopulation(pop);
         }
     }
 
@@ -571,10 +637,20 @@ public class World
             .Where(p => p.Count > 0 && p.CurrentTile is not null)
             .SelectMany(p => b.Populations
                 .Where(q => q.Count > 0 && q.CurrentTile is not null)
-                .Select(q => Math.Abs(p.CurrentTile!.X - q.CurrentTile!.X)
-                           + Math.Abs(p.CurrentTile!.Y - q.CurrentTile!.Y)))
+                .Select(q => HexDistance(p.CurrentTile!, q.CurrentTile!)))
             .DefaultIfEmpty(int.MaxValue)
             .Min();
+
+    // cube-coordinate distance for odd-r offset hex grid
+    private static int HexDistance(Tile a, Tile b)
+    {
+        var aq = a.X - (a.Y - (a.Y & 1)) / 2;
+        var bq = b.X - (b.Y - (b.Y & 1)) / 2;
+        var ar = a.Y;
+        var br = b.Y;
+        return Math.Max(Math.Max(Math.Abs(aq - bq), Math.Abs(ar - br)),
+                        Math.Abs((-aq - ar) - (-bq - br)));
+    }
 
     private static ResourceType? MostLackingResource(Population pop, Tile tile)
     {
@@ -623,7 +699,7 @@ public class World
         while (queue.Count > 0)
         {
             var (tile, firstStep) = queue.Dequeue();
-            if (Math.Abs(tile.X - current.X) + Math.Abs(tile.Y - current.Y) > MaxSearchDepth) continue;
+            if (HexDistance(tile, current) > MaxSearchDepth) continue;
 
             if (ResourceAmount(tile, resourceType) > currentAmount)
                 return firstStep;

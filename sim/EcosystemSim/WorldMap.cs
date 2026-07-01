@@ -27,13 +27,19 @@ public class WorldMap
                 yield return _tiles[x, y];
     }
 
-    // cardinal neighbors only — keeps proximity logic simple and deterministic
+    // six hex neighbors using odd-r offset: pointy-top hexes, odd rows shift right by 0.5 tile
     public IEnumerable<Tile> GetNeighbors(int x, int y)
     {
-        if (x > 0)          yield return _tiles[x - 1, y];
-        if (x < Width - 1)  yield return _tiles[x + 1, y];
-        if (y > 0)          yield return _tiles[x, y - 1];
-        if (y < Height - 1) yield return _tiles[x, y + 1];
+        (int dx, int dy)[] dirs = y % 2 == 0
+            ? [(-1, -1), (0, -1), (-1, 0), (1, 0), (-1, 1), (0, 1)]
+            : [(0,  -1), (1, -1), (-1, 0), (1, 0), (0,  1), (1, 1)];
+
+        foreach (var (dx, dy) in dirs)
+        {
+            int nx = x + dx, ny = y + dy;
+            if (nx >= 0 && nx < Width && ny >= 0 && ny < Height)
+                yield return _tiles[nx, ny];
+        }
     }
 
     public IEnumerable<Tile> GetNeighbors(Tile tile) =>
