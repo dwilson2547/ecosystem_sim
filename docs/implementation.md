@@ -32,9 +32,10 @@ testing trivial and makes frontend integration straightforward — just call `Ti
 **Per tile** (inner loop over all tiles):
 1. `RegenerateResources` — pool regen scaled by season multiplier + fertilizer bonus
 2. `DistributeResources` — proportional resource distribution, sets `LastSatisfaction`
-3. `ApplyGrowthAndDeath` — population change based on satisfaction
-4. `ProduceByproducts` — each individual emits byproducts at species rate
-5. `DecayByproducts` — byproduct pools decay 10%/tick
+3. `HuntPrey` — predators consume prey populations; updates predator `LastSatisfaction`
+4. `ApplyGrowthAndDeath` — population change based on satisfaction
+5. `ProduceByproducts` — each individual emits byproducts at species rate
+6. `DecayByproducts` — byproduct pools decay 10%/tick
 
 **Global** (after all tiles processed):
 6. `Migrate` — batch-compute all moves, then apply
@@ -48,6 +49,8 @@ testing trivial and makes frontend integration straightforward — just call `Ti
 
 **Why this order matters:**
 - Resources are distributed *before* growth so death/growth reflects current food access
+- `HuntPrey` runs after food distribution but before growth — predator satisfaction is set in
+  this tick so growth/starvation reflects actual prey availability
 - Migration happens *after* per-tile loop so a pop can't migrate and then immediately consume at
   its new tile in the same tick
 - Disease exposure is collected in one pass then applied — prevents tile-loop order from making
@@ -76,16 +79,21 @@ resources it needs. One scarce resource tanks full satisfaction even if others a
 
 ## Terrain
 
-Six terrain types set on `Tile.Terrain` during world creation. Never changes at runtime.
+Eight terrain types set on `Tile.Terrain` during world creation. Never changes at runtime.
 
-| Terrain  | Food regen | Water | Migration cost |
-|----------|-----------|-------|----------------|
-| Plains   | 10/tick   | —     | 1.0×           |
-| Forest   | 15/tick   | —     | 1.4×           |
-| Swamp    | 7/tick    | 8/tick| 1.8×           |
-| Desert   | 3/tick    | —     | 0.8×           |
-| Highland | 8/tick    | —     | 1.5×           |
-| River    | 12/tick   | 15/tick | 1.0×         |
+| Terrain      | Food pools (subtype, regen, cap)                                       | Water     | Migration cost |
+|--------------|------------------------------------------------------------------------|-----------|----------------|
+| Plains       | Graze 10/200                                                           | —         | 1.0×           |
+| Forest       | Browse 12/240, Fruit 4/80                                              | —         | 1.4×           |
+| Swamp        | Roots 5/100, Fruit 3/60                                                | 8/120     | 1.8×           |
+| Desert       | Graze 2/40                                                             | —         | 0.8×           |
+| Highland     | Browse 8/160                                                           | —         | 1.5×           |
+| River        | Graze 8/160, Browse 6/120, Fish 4/80                                   | 15/200    | 1.0×           |
+| ShallowOcean | Fish 10/200, Shrimp 15/300, Crustacean 8/160                           | —         | 1.0×           |
+| DeepOcean    | Fish 5/100, Squid 12/240, Whale 3/60                                   | —         | 1.2×           |
+
+Ocean terrains (`ShallowOcean`, `DeepOcean`) form a separate biome. Land species cannot migrate
+into ocean tiles and vice versa — enforced by `TerrainStats.SameBiome` in `BestNeighborFor`.
 
 Migration cost is used as a **tiebreaker** in `BestNeighborFor` — when multiple neighbors have
 more of the needed resource, prefer the one with lower entry cost. Resources are always the
@@ -137,14 +145,19 @@ stress from nearly-frozen water sources.
 
 `SpeciesDefinition` is immutable shared data. `Population` is a live, mutable group on one tile.
 
-**Growth:**
+**Growth (three-zone model):**
 ```csharp
-if (satisfaction >= 1f)
-    count += ceil(count × ReproductionRate)   // ceiling prevents single-individual limbo
-else
+if (satisfaction >= 0.85f)                            // GrowthThreshold
+    count += ceil(count × ReproductionRate)           // ceiling prevents single-individual limbo
+else if (satisfaction <= 0.50f)                       // StarvationThreshold (inclusive)
     deaths = ceil(count × StarvationRate × (1 - satisfaction))
     count  = max(0, count - deaths)
+// else: neutral zone [0.50, 0.85) — neither grow nor starve
 ```
+
+The neutral zone matters for species that rely on accepted foods (2/3 satisfaction credit) — they
+can reach stable equilibrium on a tile instead of being forced into starvation or emigration.
+Without it, accepted-food species could never reach sat=1.0 and would always starve back.
 
 Dead populations (`Count = 0`) **stay on their tile** forever. They're rendered as `[EXTINCT]`
 and skipped by all simulation logic. Removing them would erase run history.
@@ -206,6 +219,59 @@ existing.SizePressure  = (existing.SizePressure  × existing.Count + pop.SizePre
 ```
 
 Two populations of different factions (even same species) never merge.
+
+---
+
+## Predation (carnivore mechanics)
+
+Carnivore species consume other populations as their food source via `HuntPrey()`. This runs
+per-tile after `DistributeResources` and before `ApplyGrowthAndDeath`.
+
+**Species fields:**
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `ConsumptionRates[ResourceType.Prey]` | float | individuals consumed per predator per tick (scales with SizeIndex) |
+| `PreferredPrey` | `HashSet<PreyCategory>` | full satisfaction value when consuming |
+| `AcceptedPrey` | `HashSet<PreyCategory>` | 2/3 satisfaction value (hunger remains if preferred unavailable) |
+| `AsPreyCategory` | `PreyCategory?` | what category this species is when *hunted*; `null` = cannot be preyed upon |
+
+`PreyCategory` values: `SmallHerbivore`, `LargeHerbivore`, `SmallMarine`, `LargeMarine`.
+
+**Two-pass hunt (mirrors typed food distribution):**
+
+Pass 1 — preferred prey, full satisfaction:
+- For each prey population: find eligible hunters (prefer set empty = "any" OR contains this category)
+- Distribute available prey proportionally among hungry hunters
+- `received[hunter] += taken`
+
+Pass 2 — accepted prey, 2/3 satisfaction, only for still-hungry hunters:
+- Only eligible if species has explicit preferences, this prey isn't preferred, but IS accepted
+
+Prey deaths:
+```csharp
+deaths = min(preyPop.Count, ceil(consumed))   // ceiling so any hunt always claims ≥ 1 individual
+```
+
+Predator satisfaction:
+```csharp
+sat = min(1f, received / demand)
+hunter.LastSatisfaction = min(hunter.LastSatisfaction, sat)   // mins with any water sat already set
+```
+
+**Predator migration** works the same as herbivore migration — `MostLackingResource` returns
+`ResourceType.Prey` when that's the most lacking, and `BestNeighborFor` uses `EffectivePreyAmount`
+to compare tiles (counts prey populations weighted by preference, same 2/3 penalty for accepted).
+`SustainableCount` for predators uses current prey count as a proxy for regen (prey repopulate
+from reproduction, not fixed regen). BFS fallback navigates prey deserts up to 6 tiles.
+
+**Demo carnivore — Kronosaurus:**
+
+| Species | Prey consumption | Preferred prey | Accepted prey | Repro | Starv | Combat |
+|---------|-----------------|----------------|---------------|-------|-------|--------|
+| Kronosaurus | 0.15/ind/tick | LargeMarine (Plesiosaur) | SmallMarine (Mosasaurus) | 0.3% | 1.2% | 4.5 |
+
+Placed at DeepOcean (11,5) between Mosasaurus at ShallowOcean (9,5) and Plesiosaur at (13,5).
 
 ---
 
@@ -371,11 +437,26 @@ Adding a new intervention = add a class implementing `IWorldCommand`, no changes
 
 ## Demo species (WorldSeeder)
 
+**Land herbivores:**
+
 | Species | Food | Water | Repro | Starv | Aggression | Combat | Immunity | Notes |
 |---------|------|-------|-------|-------|------------|--------|---------|-------|
-| Triceratops | 2/ind | 1/ind | 5% | 5% | 0.3 | 1.4 | 0.30 | water-dependent, strong |
-| Brachiosaurus | 5/ind | 2/ind | 3% | 3% | 0.1 | 0.6 | 0.15 | keystone fertilizer, very vulnerable to disease |
-| Pachycephalosaurus | 1/ind | — | 8% | 6% | 0.5 | 0.9 | 0.55 | food only, aggressive, disease-resistant |
+| Triceratops | 2/ind | 1/ind | 1.5% | 1.5% | 0.3 | 1.4 | 0.30 | Prefers Graze, accepts Browse/Roots; water-dependent |
+| Brachiosaurus | 5/ind | 2/ind | 0.8% | 0.8% | 0.1 | 0.6 | 0.15 | Prefers Browse, accepts Fruit/Graze; keystone fertilizer, disease-vulnerable |
+| Pachycephalosaurus | 1/ind | — | 2.0% | 1.5% | 0.5 | 0.9 | 0.55 | Prefers Fruit/Roots, accepts Graze/Browse; no water, disease-resistant |
+
+**Marine herbivores:**
+
+| Species | Food | Water | Repro | Starv | Aggression | Combat | Immunity | Notes |
+|---------|------|-------|-------|-------|------------|--------|---------|-------|
+| Mosasaurus | 4/ind | — | 1.0% | 1.2% | 0.4 | 2.0 | 0.40 | Prefers Shrimp/Crustacean, accepts Fish; ShallowOcean |
+| Plesiosaur | 4/ind | — | 0.6% | 0.8% | 0.2 | 3.0 | 0.35 | Prefers Whale/Squid, accepts Fish; DeepOcean; prone to mega-herds |
+
+**Marine carnivore:**
+
+| Species | Prey | Repro | Starv | Aggression | Combat | Immunity | Notes |
+|---------|------|-------|-------|------------|--------|---------|-------|
+| Kronosaurus | 0.15/ind | 0.3% | 1.2% | 0.7 | 4.5 | 0.40 | Prefers LargeMarine (Plesio), accepts SmallMarine (Mosa) |
 
 ---
 

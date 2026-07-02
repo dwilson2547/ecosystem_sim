@@ -14,7 +14,7 @@ prototype (`SimConsole`) still works but the real UI is in `godot/`.
 
 - **Language:** C# 12, .NET 8
 - **Engine layer:** `EcosystemSim` — a class library, zero UI dependencies, engine-agnostic
-- **Tests:** xUnit 3, `EcosystemSim.Tests` — 54 tests, run `dotnet test` from `sim/`
+- **Tests:** xUnit 3, `EcosystemSim.Tests` — 60 tests, run `dotnet test` from `sim/`
 - **Console UI:** `SimConsole` — terminal renderer / prototype; run from `sim/`
 - **Game UI:** Godot 4.7 (.NET), lives in `godot/`; references `EcosystemSim` via ProjectReference
 
@@ -164,6 +164,17 @@ combat strength, byproduct output, reproduction rate all scale). `SizeIndex` res
 new baseline. Naming tiers: base → Greater/Lesser → Giant/Dwarf. If two populations independently
 reach the same tier, they share one definition. See **`docs/speciation.md`** for full mechanics.
 
+### 12. Predation (carnivore mechanics)
+Carnivore species set `ConsumptionRates[ResourceType.Prey]` instead of (or in addition to) Food.
+They declare `PreferredPrey` and `AcceptedPrey` as `HashSet<PreyCategory>` — same two-pass model
+as typed food: preferred = full sat, accepted = 2/3 sat. Prey deaths are proportional to the
+fraction consumed; `Math.Ceiling` ensures nonzero hunts always claim at least one individual.
+Prey populations set `AsPreyCategory` to indicate what category they are when hunted. Carnivores
+migrate toward tiles with more prey via the standard BFS, using `EffectivePreyAmount` to compare
+tiles (counts prey individuals weighted by preference). `PreyCategory` values: `SmallHerbivore`,
+`LargeHerbivore`, `SmallMarine`, `LargeMarine`. Demo carnivore: **Kronosaurus** at DeepOcean
+(11,5), hunting Plesiosaur (preferred) and Mosasaurus (accepted). See `docs/implementation.md`.
+
 ---
 
 ## Tick order (per `World.Tick()`)
@@ -171,19 +182,20 @@ reach the same tier, they share one definition. See **`docs/speciation.md`** for
 Per tile:
 1. `RegenerateResources` — regen × season multiplier + fertilizer bonus
 2. `DistributeResources` — proportional share, updates `LastSatisfaction`
-3. `ApplyGrowthAndDeath` — grow if full, die if starving
-4. `ProduceByproducts` — count × species rate
-5. `DecayByproducts` — 10%/tick
+3. `HuntPrey` — predators consume prey populations; sets predator `LastSatisfaction`
+4. `ApplyGrowthAndDeath` — grow if sat≥0.85, die if sat≤0.50, neutral zone in between
+5. `ProduceByproducts` — count × species rate
+6. `DecayByproducts` — 10%/tick
 
 Global:
-6. `Migrate` — collect moves, apply, merge or place
-7. `ResolveCombat` — simultaneous casualties for at-war factions on same tile
-8. `SpreadDisease` — two-phase exposure + apply + mortality + recovery
-9. `ExecuteTrade` — byproduct equalization + tension bonus
-10. `UpdateFactionRelations` — tension delta, state transitions
-11. `ApplyEvolution` — pressure accumulators + threshold crossings
-12. `ApplySpeciation` — fork populations that crossed size thresholds into derived species
-13. `State.Tick++`, `AdvanceSeason()`
+7. `Migrate` — collect moves, apply, merge or place
+8. `ResolveCombat` — simultaneous casualties for at-war factions on same tile
+9. `SpreadDisease` — two-phase exposure + apply + mortality + recovery
+10. `ExecuteTrade` — byproduct equalization + tension bonus
+11. `UpdateFactionRelations` — tension delta, state transitions
+12. `ApplyEvolution` — pressure accumulators + threshold crossings
+13. `ApplySpeciation` — fork populations that crossed size thresholds into derived species
+14. `State.Tick++`, `AdvanceSeason()`
 
 ---
 
@@ -208,13 +220,17 @@ Global:
   terrestrial species occupy entirely disjoint migration spaces.
 - **Typed food two-pass** — preferred food (full sat) consumed before accepted food (2/3 sat);
   species with empty `FoodPreferences` compete for any pool at full sat (backward-compat path).
+- **Three-zone growth** — sat≥0.85 grows, sat≤0.50 starves, [0.50,0.85) is a neutral hold zone.
+  This lets accepted-food species stabilize instead of being perpetually forced into starvation.
+- **Prey two-pass mirrors food** — same logic as typed food but consuming population counts rather
+  than resource pool amounts. `Math.Ceiling` on prey deaths prevents hunts from consuming fractional individuals.
 
 ---
 
 ## Testing patterns
 
-Tests use `new World()` directly — never `WorldSeeder.CreateDemo()`. Each test sets up exactly
-what it needs on specific tiles. Key helpers in `WorldTests.cs`:
+Tests use `new World()` directly — never `WorldSeeder.CreateDemo()`. 60 tests total. Each test
+sets up exactly what it needs on specific tiles. Key helpers in `WorldTests.cs`:
 
 - `BasicSpecies()` — food-only, 0.1 repro, 0.5 starvation
 - `AbundantFood()` / `EmptyFood()` — saturated vs zero-regen food pools
@@ -223,18 +239,21 @@ what it needs on specific tiles. Key helpers in `WorldTests.cs`:
 - `PopOnTile()` — evolution tests, no repro/starvation
 - `TestDisease()` — configurable spread/mortality/recovery
 - `FertiliserSpecies()` — byproduct-emitting species with zero growth/death
+- `PredatorSpecies(name, rate, preferred?, accepted?)` — carnivore with `ResourceType.Prey` consumption; 0 repro/starvation
+- `PreySpecies(name, PreyCategory)` — prey species tagged with `AsPreyCategory`; 0 repro/starvation
 
 ---
 
 ## What's next
 
 1. **Godot frontend polish** — disease/trade hotkeys, population history graphs
-2. **Carnivore mechanics** — T-Rex consuming other populations as food (Prey food subtype);
-   lone-wanderer instinct; territorial hunting range
-3. **Procedural map generation** — rivers, biomes, mountain ranges; replaces the hardcoded
+2. **Carnivore tuning** — Kronosaurus `ConsumptionRate` / `ReproductionRate` balance; consider
+   `ReproductionAccumulator` to fix `Math.Ceiling` forcing +1 growth on very slow-reproducing species
+3. **Land carnivore** — T-Rex consuming `SmallHerbivore`/`LargeHerbivore`; lone-wanderer instinct
+4. **Procedural map generation** — rivers, biomes, mountain ranges; replaces the hardcoded
    terrain string in `WorldSeeder`
-4. **Player interventions** — meteor strike, terraforming, population seeding mid-run
-5. **Faction memory** — grudges, reputation, vassal relationships
+5. **Player interventions** — meteor strike, terraforming, population seeding mid-run
+6. **Faction memory** — grudges, reputation, vassal relationships
 
 See `docs/implementation.md` for mechanics of every implemented system,
 `docs/food-types.md` for typed food subtype mechanics, and
