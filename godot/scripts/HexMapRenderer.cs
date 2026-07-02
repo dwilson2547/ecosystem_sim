@@ -19,6 +19,16 @@ public partial class HexMapRenderer : Node2D
     {
         BuildMap();
         SimManager.Instance.Ticked += RefreshAll;
+        SimManager.Instance.WorldReset += RebuildMap;
+    }
+
+    private void RebuildMap()
+    {
+        foreach (var tile in _tiles.Values)
+            tile.QueueFree();
+        _tiles.Clear();
+        _selectedTile = null;
+        BuildMap();
     }
 
     private void BuildMap()
