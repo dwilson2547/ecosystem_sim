@@ -239,21 +239,28 @@ public class World
 
     private static void ApplyGrowthAndDeath(Tile tile)
     {
+        // Three-zone model: grow when well-fed, neutral in the middle, starve only when truly scarce.
+        // This prevents species that rely partly on accepted foods (2/3 credit) from being stuck in
+        // a permanent starvation loop because they can never hit the old 100% satisfaction threshold.
+        const float GrowthThreshold    = 0.85f;
+        const float StarvationThreshold = 0.50f;
+
         foreach (var pop in tile.Populations)
         {
             var satisfaction = pop.LastSatisfaction;
 
-            if (satisfaction >= 1f)
+            if (satisfaction >= GrowthThreshold)
             {
                 // ceiling ensures small-but-surviving populations can recover (avoids int-truncation limbo)
                 pop.Count += (int)Math.Ceiling(pop.Count * pop.Species.ReproductionRate);
             }
-            else
+            else if (satisfaction <= StarvationThreshold)
             {
                 var deficit = 1f - satisfaction;
                 var deaths = (int)Math.Ceiling(pop.Count * pop.Species.StarvationRate * deficit);
                 pop.Count = Math.Max(0, pop.Count - deaths);
             }
+            // else: neutral zone — neither grow nor starve
         }
     }
 

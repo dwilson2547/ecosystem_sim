@@ -63,7 +63,7 @@ public static class WorldSeeder
             AcceptedFoods    = { FoodSubtype.Fish },
             ReproductionRate = 0.01f,
             StarvationRate   = 0.012f,
-            MigrationThreshold = 0.5f,
+            MigrationThreshold = 0.85f,
             WarAggression = 0.4f,
             CombatStrength = 2.0f,
             Immunity = 0.4f
@@ -78,7 +78,7 @@ public static class WorldSeeder
             AcceptedFoods    = { FoodSubtype.Fish },
             ReproductionRate = 0.006f,
             StarvationRate   = 0.008f,
-            MigrationThreshold = 0.5f,
+            MigrationThreshold = 0.85f,
             WarAggression = 0.2f,
             CombatStrength = 3.0f,
             Immunity = 0.35f
