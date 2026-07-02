@@ -85,8 +85,9 @@ public partial class TileInfoPanel : CanvasLayer
             Row("Resources", color: new Color(0.7f, 0.9f, 1f));
             foreach (var r in _tile.Resources)
             {
-                var pct = r.Capacity > 0 ? r.Amount / r.Capacity * 100f : 0f;
-                Row($"  {r.Type}  {r.Amount:F0}/{r.Capacity:F0} ({pct:F0}%)  +{r.RegenPerTick:F1}/tick",
+                var pct  = r.Capacity > 0 ? r.Amount / r.Capacity * 100f : 0f;
+                var name = r.FoodSubtype.HasValue ? r.FoodSubtype.Value.ToString() : r.Type.ToString();
+                Row($"  {name}  {r.Amount:F0}/{r.Capacity:F0} ({pct:F0}%)  +{r.RegenPerTick:F1}/tick",
                     color: new Color(0.78f, 0.9f, 0.78f));
             }
             Sep();

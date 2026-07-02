@@ -107,7 +107,8 @@ public static class WorldSeeder
             // subsists on raw fish/squid at low ease (partial satisfaction) when prey is absent
             FoodConsumptionRate  = 0.5f,
             EaseOfEating = { [FoodSubtype.Fish] = 1f, [FoodSubtype.Squid] = 1f },
-            PreyConsumptionRate = 2f,
+            // prey eaten per predator per tick — whole individuals, so a small fraction (~1 kill / 7 ticks)
+            PreyConsumptionRate = 0.15f,
             PreferredPrey = [PreyCategory.LargeMarine],
             AcceptedPrey  = [PreyCategory.SmallMarine],
             ByproductRates   = {},

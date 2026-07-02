@@ -28,6 +28,14 @@ public partial class HexTile : Node2D
     {
         ["Alamosaurus"] = "res://assets/sprites/alamosaurus.png",
         ["Triceratops"] = "res://assets/sprites/triceratops.png",
+        ["Megalodon"]   = "res://assets/sprites/megalodon.png",
+    };
+
+    // per-species icon size multiplier (default 1). The Megalodon is a singleton apex, so it's
+    // drawn oversized to stand out from the herds around it.
+    private static readonly Dictionary<string, float> IconScales = new()
+    {
+        ["Megalodon"] = 2.5f,
     };
 
     private static readonly Dictionary<string, Texture2D> _iconCache = new();
@@ -126,7 +134,9 @@ public partial class HexTile : Node2D
 
             var iconCount = Mathf.Clamp(Mathf.CeilToInt((float)dominant!.Count / CountPerIcon), 1, MaxSpeciesIcons);
             var layout    = IconLayouts[iconCount - 1];
-            var scale     = new Vector2(IconSize / icon.GetWidth(), IconSize / icon.GetHeight());
+            var sizeMult  = IconScales.GetValueOrDefault(dominant.Species.EffectiveRootName, 1f);
+            var drawSize  = IconSize * sizeMult;
+            var scale     = new Vector2(drawSize / icon.GetWidth(), drawSize / icon.GetHeight());
 
             for (var i = 0; i < _speciesIcons.Count; i++)
             {
