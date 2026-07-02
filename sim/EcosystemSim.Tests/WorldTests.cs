@@ -1483,4 +1483,49 @@ public class WorldTests
         Assert.Empty(emptyTile.Populations.Where(p => p.Count > 0 && p.Species.IsPredator));
         Assert.Single(preyTile.Populations.Where(p => p.Count > 0 && p.Species.IsPredator));
     }
+
+    [Fact]
+    public void HuntPrey_FunctionalResponseLeavesRefugeInsteadOfWiping()
+    {
+        var world    = new World();
+        var tile     = world.State.Map.GetTile(0, 0);
+        // overwhelming predator demand (100 rate × 10 = 1000) against a small herd
+        var predator = PredatorSpecies("Predator", rate: 100f, preferred: PreyCategory.SmallHerbivore);
+        var prey     = PreySpecies("Prey", PreyCategory.SmallHerbivore);
+
+        var hunterPop = new Population { Species = predator, Count = 10 };
+        var preyPop   = new Population { Species = prey,     Count = 10 };
+        tile.Populations.AddRange([hunterPop, preyPop]);
+
+        world.Tick();
+
+        // the density-dependent refuge means even a huge predator force cannot take the
+        // whole herd in a single tick — some prey always survive to recover
+        Assert.True(preyPop.Count > 0, "functional response should leave a prey refuge, not a single-tick wipeout");
+        Assert.True(preyPop.Count < 10, "predation should still claim some of the herd");
+    }
+
+    [Fact]
+    public void Migrate_PreyScatterFromInvadingPredator()
+    {
+        var world = new World();
+        var tile  = world.State.Map.GetTile(0, 0);
+        // low predator rate so hunting barely dents the herd — we're testing the scatter split,
+        // not attrition. Prey have no resource pressure, so any move is purely the scatter trigger.
+        var predator = PredatorSpecies("Predator", rate: 0.01f, preferred: PreyCategory.SmallHerbivore);
+        var prey     = PreySpecies("Prey", PreyCategory.SmallHerbivore);
+
+        tile.Populations.Add(new Population { Species = predator, Count = 5 });
+        tile.Populations.Add(new Population { Species = prey,     Count = 20 });
+
+        world.Tick();
+
+        var scattered = world.State.Map.AllTiles()
+            .Where(t => t != tile)
+            .Sum(t => t.Populations.Where(p => p.Species == prey).Sum(p => p.Count));
+
+        Assert.True(scattered > 0, "prey should split off a fleeing group to a neighbouring tile");
+        var stayed = tile.Populations.Where(p => p.Species == prey).Sum(p => p.Count);
+        Assert.True(stayed > 0, "stragglers should remain behind for the predator, not the whole herd fleeing");
+    }
 }

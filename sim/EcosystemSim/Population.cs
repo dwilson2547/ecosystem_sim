@@ -46,6 +46,10 @@ public class Population
     // fractional starvation deaths carried across ticks; applied when accumulator ≥ 1
     public float StarvationAccumulator { get; set; }
 
+    // fractional predation deaths carried across ticks; applied when accumulator ≥ 1.
+    // lets a functional response take sub-1 prey per tick without a rounding-up wipeout.
+    public float PredationAccumulator { get; set; }
+
     // ── effective stats (base species trait + evolution modifier) ─────────────
 
     public float EffectiveCombatStrength => Species.CombatStrength * MathF.Sqrt(SizeIndex);

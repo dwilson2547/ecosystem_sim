@@ -221,6 +221,15 @@ public class World
 
     private const float AcceptedPreyValue = 2f / 3f;
 
+    // Holling type-III prey refuge: the findable (huntable) portion of a herd is
+    // count × count/(count + K), so hunting efficiency collapses as prey thin out and
+    // predators can never drive a population to zero in one pass. Larger K = safer prey.
+    private const float PreyRefugeHalfSaturation = 20f;
+
+    // prey herds below this size don't scatter — they're already at refuge scale, and fragmenting
+    // them further would spread prey into predator-free tiles faster than predators can follow
+    private const int ScatterMinHerd = 12;
+
     // two-pass hunt mirroring the food distribution model: preferred prey first (full satisfaction),
     // then accepted prey for still-hungry hunters (2/3 satisfaction).
     private static void HuntPrey(Tile tile, bool migrantsOnly = false)
@@ -244,8 +253,15 @@ public class World
         var received     = hunters.ToDictionary(h => h, _ => 0f);
         var preyConsumed = preyPops.ToDictionary(p => p, _ => 0f);
 
-        float RemainingDemand(Population h)  => Math.Max(0f, demand[h] - received[h]);
-        float AvailablePrey(Population prey) => Math.Max(0f, prey.Count - preyConsumed[prey]);
+        float RemainingDemand(Population h) => Math.Max(0f, demand[h] - received[h]);
+
+        // functional response: only a density-dependent fraction of the herd is findable this
+        // tick, so predation saturates when prey are abundant and leaves a refuge when they're scarce
+        float AvailablePrey(Population prey)
+        {
+            var findable = prey.Count * (prey.Count / (prey.Count + PreyRefugeHalfSaturation));
+            return Math.Max(0f, findable - preyConsumed[prey]);
+        }
 
         // pass 1: preferred prey — full sat; empty PreferredPrey means "any prey at full sat"
         foreach (var preyPop in preyPops)
@@ -296,10 +312,13 @@ public class World
             }
         }
 
-        // apply prey deaths — ceiling so any nonzero hunt always claims at least one individual
+        // apply prey deaths — fractional consumption accumulates so a sub-1 hunt (a thinned,
+        // well-hidden herd) doesn't get rounded up into a full kill and wiped out
         foreach (var (preyPop, consumed) in preyConsumed)
         {
-            var deaths = Math.Min(preyPop.Count, (int)Math.Ceiling(consumed));
+            preyPop.PredationAccumulator += consumed;
+            var deaths = Math.Min(preyPop.Count, (int)Math.Floor(preyPop.PredationAccumulator));
+            preyPop.PredationAccumulator -= deaths;
             preyPop.Count = Math.Max(0, preyPop.Count - deaths);
         }
 
@@ -409,6 +428,25 @@ public class World
                 }
 
                 if (pop.MigrationCooldown > 0) { pop.MigrationCooldown--; continue; }
+
+                // scatter: prey bolt from a tile a predator has invaded even if well-fed. A third of
+                // the herd splits to the safest reachable neighbour; the rest stay (and get hunted),
+                // so predators aren't starved out. Only herds above ScatterMinHerd fragment — small
+                // groups hold ground rather than dispersing into predator-free tiles and exploding,
+                // which would starve the predators. Throttled by MigrationCooldownTicks (skittishness).
+                if (pop.Species.AsPreyCategory.HasValue
+                    && pop.Count >= ScatterMinHerd
+                    && TileHasPredatorFor(tile, pop))
+                {
+                    var refuge = BestNeighborAwayFromPredators(tile, pop.Species);
+                    if (refuge is not null)
+                    {
+                        var fleeing = Math.Max(1, pop.Count / 3);
+                        moves.Add((pop, fleeing, tile, refuge));
+                        pop.MigrationCooldown = pop.Species.MigrationCooldownTicks;
+                        continue;
+                    }
+                }
 
                 if (pop.LastSatisfaction >= pop.Species.MigrationThreshold) continue;
 
@@ -551,6 +589,35 @@ public class World
         return total;
     }
 
+    // true if any living predator on the tile can hunt this prey (preferred, accepted, or generalist)
+    private static bool TileHasPredatorFor(Tile tile, Population prey) =>
+        PredatorPressureOn(tile, prey.Species) > 0;
+
+    // total count of predators on a tile that would hunt the given prey species
+    private static int PredatorPressureOn(Tile tile, SpeciesDefinition preySpecies)
+    {
+        if (!preySpecies.AsPreyCategory.HasValue) return 0;
+        var cat = preySpecies.AsPreyCategory.Value;
+        return tile.Populations
+            .Where(p => p.Count > 0 && p.Species.IsPredator
+                     && (p.Species.PreferredPrey.Count == 0
+                         || p.Species.PreferredPrey.Contains(cat)
+                         || p.Species.AcceptedPrey.Contains(cat)))
+            .Sum(p => p.Count);
+    }
+
+    // flee to the same-biome, terrain-allowed neighbour with the least predator pressure,
+    // breaking ties by food value; avoid River so prey don't bolt straight into drowning
+    private Tile? BestNeighborAwayFromPredators(Tile current, SpeciesDefinition species) =>
+        State.Map.GetNeighbors(current)
+            .Where(n => n.Terrain != TerrainType.River
+                     && TerrainStats.IsOcean(n.Terrain) == TerrainStats.IsOcean(current.Terrain)
+                     && IsTerrainAllowed(n, species))
+            .OrderBy(n => PredatorPressureOn(n, species))
+            .ThenByDescending(n => EffectiveFoodValue(n, species))
+            .ThenBy(n => TerrainStats.MigrationCostOf(n.Terrain))
+            .FirstOrDefault();
+
     // flee to the best non-River, same-biome neighbor
     private Tile? BestNeighborAwayFromWater(Tile current, SpeciesDefinition species) =>
         State.Map.GetNeighbors(current)
@@ -643,6 +710,7 @@ public class World
             existing.SizePressure         = (existing.SizePressure         * existing.Count + pop.SizePressure         * pop.Count) / total;
             existing.WaterExposure        = (existing.WaterExposure        * existing.Count + pop.WaterExposure        * pop.Count) / total;
             existing.StarvationAccumulator = (existing.StarvationAccumulator * existing.Count + pop.StarvationAccumulator * pop.Count) / total;
+            existing.PredationAccumulator  = (existing.PredationAccumulator  * existing.Count + pop.PredationAccumulator  * pop.Count) / total;
             existing.Count += pop.Count;
             pop.Faction?.Populations.Remove(pop);
             return existing;
