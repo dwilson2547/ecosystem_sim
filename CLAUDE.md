@@ -14,7 +14,7 @@ prototype (`SimConsole`) still works but the real UI is in `godot/`.
 
 - **Language:** C# 12, .NET 8
 - **Engine layer:** `EcosystemSim` — a class library, zero UI dependencies, engine-agnostic
-- **Tests:** xUnit 3, `EcosystemSim.Tests` — 68 tests, run `dotnet test` from `sim/`
+- **Tests:** xUnit 3, `EcosystemSim.Tests` — 71 tests, run `dotnet test` from `sim/`
 - **Console UI:** `SimConsole` — terminal renderer / prototype; run from `sim/`
 - **Game UI:** Godot 4.7 (.NET), lives in `godot/`; references `EcosystemSim` via ProjectReference
 
@@ -60,7 +60,7 @@ sim/
 │   └── *Command.cs         # IWorldCommand implementations for player interventions
 │
 ├── EcosystemSim.Tests/     # xUnit tests
-│   └── WorldTests.cs       # 68 tests; isolated worlds, no seeder dependency
+│   └── WorldTests.cs       # 71 tests; isolated worlds, no seeder dependency
 │
 └── SimConsole/             # Terminal prototype
     ├── Program.cs          # Input loop + tick scheduling
@@ -74,7 +74,7 @@ sim/
 
 ```bash
 cd sim
-dotnet test                        # run all 68 tests
+dotnet test                        # run all 71 tests
 dotnet run --project SimConsole    # terminal prototype
 ```
 
@@ -120,8 +120,11 @@ Current season shown in the header. Stored in `WorldState.CurrentSeason`.
 ### 4. Populations & species
 A `SpeciesDefinition` is a blueprint. A `Population` is a live group on a specific tile. The
 same species can have multiple populations (same or different tiles, same or different factions).
-Population grows on full satisfaction, shrinks (starvation death) on deficit. Uses `Math.Ceiling`
-to prevent single-individual limbo.
+Population grows on full satisfaction, shrinks (starvation death) on deficit. Births, starvation
+deaths, and predation deaths all accumulate fractionally across ticks (`ReproductionAccumulator` /
+`StarvationAccumulator` / `PredationAccumulator`) and only apply a whole individual once the running
+total crosses 1 — so a slow reproducer or a thinned prey herd changes at its true rate instead of
+being rounded up to ±1 every tick, while a Count=1 pop still grows/dies eventually (no limbo).
 
 Population grows on full satisfaction (sat≥0.85), shrinks in the starvation zone (sat≤0.50), and
 holds stable in between — the neutral zone [0.50, 0.85) lets accepted-food species stabilize.
@@ -165,8 +168,14 @@ back down — a quick drink is harmless, camping there is not.
 Carnivore species set `PreyConsumptionRate` and declare `PreferredPrey` / `AcceptedPrey` as
 `HashSet<PreyCategory>` (SmallHerbivore, LargeHerbivore, SmallMarine, LargeMarine). `HuntPrey`
 runs per tile after `DistributeResources`: preferred prey → full satisfaction, accepted prey →
-2/3 satisfaction. Prey deaths = `ceil(consumed)` — any nonzero hunt claims at least 1 individual.
-Prey populations set `AsPreyCategory`. Carnivores migrate toward prey via the standard BFS.
+2/3 satisfaction. A **Holling type-III functional response** makes only `count²/(count+K)` of a herd
+huntable per tick (`PreyRefugeHalfSaturation` K), so efficiency collapses as prey thin out and a
+predator can never zero a herd in one pass. Prey deaths accumulate fractionally via
+`PredationAccumulator` (whole individuals only when it crosses 1) rather than `ceil`-ing every hunt.
+Prey also **scatter**: a herd ≥ `ScatterMinHerd` (12) that a predator invades splits a third off to
+the safest reachable neighbour (`BestNeighborAwayFromPredators`), throttled by migration cooldown,
+so it disperses under pressure even when well-fed while leaving stragglers behind. Prey populations
+set `AsPreyCategory`. Carnivores migrate toward prey via the standard BFS.
 Demo carnivore: **Kronosaurus** at DeepOcean, hunting Plesiosaur (preferred) and Mosasaurus (accepted).
 
 ### 10. Disease
@@ -244,8 +253,11 @@ Global:
   within the tile loop would make disease spread order-dependent.
 - **No global resource pools** — populations can only consume what's on their tile. Geography
   matters.
-- **Math.Ceiling for growth** — `(int)(1 × 0.05) = 0` would permanently strand Count=1 pops.
-  Ceiling ensures at least 1 individual grows/dies even in small populations.
+- **Fractional births/deaths, no limbo** — growth, starvation, and predation each bank a fractional
+  running total (`ReproductionAccumulator` / `StarvationAccumulator` / `PredationAccumulator`) and
+  apply whole individuals only when it crosses 1. A naive `(int)(1 × 0.05) = 0` would strand Count=1
+  pops forever; the accumulator instead grows/kills them after enough sustained ticks, at the true
+  rate rather than forcing ±1 every tick. Growth debt clears whenever a pop leaves the growth zone.
 - **Terrain is static** — set during world seeding, never changes at runtime except via terrain
   degradation. Seasonal and fertilizer modifiers apply at tick time, not to the terrain definition.
 - **`Population.EffectiveFoodDemand` / `EffectiveWaterDemand` / `EffectivePreyDemand`** — food and
@@ -257,7 +269,9 @@ Global:
 - **Three-zone growth** — sat≥0.85 grows, sat≤0.50 starves, [0.50,0.85) neutral hold. The
   neutral zone lets accepted-food species stabilize rather than perpetually starving.
 - **Prey two-pass mirrors food** — preferred prey at full satisfaction, accepted prey at 2/3 sat.
-  `Math.Ceiling` on prey deaths prevents hunts from consuming fractional individuals.
+  A Holling type-III functional response (`count²/(count+K)`) makes only a density-dependent fraction
+  of a herd huntable, so a predator can't wipe a tile in one pass; prey deaths accumulate fractionally
+  (`PredationAccumulator`) rather than rounding each hunt up to a full kill.
 
 ---
 
@@ -281,8 +295,10 @@ what it needs on specific tiles. Key helpers in `WorldTests.cs`:
 ## What's next
 
 1. **Godot frontend polish** — ocean tile rendering, disease/trade hotkeys, population history graphs
-2. **Carnivore tuning** — Kronosaurus `ConsumptionRate` / `ReproductionRate` balance; consider
-   `ReproductionAccumulator` to fix `Math.Ceiling` forcing +1 growth on very slow-reproducing species
+2. **Predator-prey balance tuning** — the refuge/scatter/accumulator *mechanisms* are in place but
+   deliberately un-tuned: in a sparse-predator sandbox the equilibrium currently favours prey. Tune
+   `PreyRefugeHalfSaturation`, `ScatterMinHerd`, Kronosaurus `PreyConsumptionRate`/`ReproductionRate`,
+   and per-species `MigrationCooldownTicks` (skittishness) once the roster grows
 3. **Land carnivore** — T-Rex consuming `SmallHerbivore`/`LargeHerbivore`
 4. **Procedural map generation** — rivers, biomes, mountain ranges; replaces the hardcoded
    terrain string in `WorldSeeder`

@@ -50,6 +50,11 @@ public class Population
     // lets a functional response take sub-1 prey per tick without a rounding-up wipeout.
     public float PredationAccumulator { get; set; }
 
+    // fractional births carried across ticks; applied when accumulator ≥ 1. mirrors the death
+    // accumulators so a slow-reproducing pop grows at its true rate instead of the old Math.Ceiling
+    // forcing +1 every tick. cleared whenever the pop leaves the growth zone.
+    public float ReproductionAccumulator { get; set; }
+
     // ── effective stats (base species trait + evolution modifier) ─────────────
 
     public float EffectiveCombatStrength => Species.CombatStrength * MathF.Sqrt(SizeIndex);

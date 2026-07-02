@@ -52,6 +52,37 @@ public class WorldTests
     }
 
     [Fact]
+    public void Tick_SlowReproducerAccumulatesBirthsInsteadOfForcingPlusOne()
+    {
+        // ReproductionRate × Count = 0.05 per tick — under the old Math.Ceiling this rounded up to
+        // +1 individual every single tick (doubling a Count=1 pop instantly). It must now bank the
+        // fractional births and only add a whole individual once they cross 1.0.
+        var species = new SpeciesDefinition
+        {
+            Name = "SlowBreeder",
+            FoodConsumptionRate = 1f,
+            ReproductionRate = 0.05f,
+            StarvationRate = 0.5f
+        };
+
+        var world = new World();
+        var tile = world.State.Map.GetTile(0, 0);
+        tile.Resources.Add(AbundantFood());
+        var pop = new Population { Species = species, Count = 1 };
+        tile.Populations.Add(pop);
+
+        world.Tick();
+        Assert.Equal(1, pop.Count);                     // no rounding-up jump on a single tick
+        Assert.True(pop.PredationAccumulator == 0f);
+        Assert.InRange(pop.ReproductionAccumulator, 0.04f, 0.06f);
+
+        // sustained abundance eventually banks a whole individual — growth still happens, just at
+        // the true rate rather than every tick (preserves the no-stranding invariant).
+        for (var i = 0; i < 25; i++) world.Tick();
+        Assert.True(pop.Count >= 2, $"expected growth over 26 ticks, got {pop.Count}");
+    }
+
+    [Fact]
     public void Tick_PopulationDeclinesWhenResourcesDepleted()
     {
         var world = new World();

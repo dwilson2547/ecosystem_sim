@@ -237,15 +237,29 @@ stress from nearly-frozen water sources.
 
 `SpeciesDefinition` is immutable shared data. `Population` is a live, mutable group on one tile.
 
-**Growth — three-zone model:**
+**Growth — three-zone model with fractional accumulators:**
 ```csharp
 if (satisfaction >= 0.85f)                          // abundance zone
-    count += ceil(count × ReproductionRate)
+    ReproductionAccumulator += count × ReproductionRate
+    births = (int)ReproductionAccumulator           // whole individuals only
+    ReproductionAccumulator -= births
+    count += births
+    StarvationAccumulator = 0f
 else if (satisfaction <= 0.50f)                     // starvation zone
-    deaths = ceil(count × StarvationRate × (1 - satisfaction))
-    count  = max(0, count - deaths)
-// neutral zone [0.50, 0.85): neither grow nor shrink
+    StarvationAccumulator += count × StarvationRate × (1 - satisfaction)
+    deaths = min(count, (int)StarvationAccumulator)
+    StarvationAccumulator -= deaths
+    count -= deaths
+    ReproductionAccumulator = 0f
+// neutral zone [0.50, 0.85): neither grow nor shrink; both accumulators cleared
 ```
+Births and starvation deaths **bank fractionally** across ticks and only apply a whole individual
+once the running total crosses 1 — a slow reproducer or lightly-starved pop changes at its true rate
+instead of being rounded up to ±1 every tick, while a `Count=1` pop still grows/dies after enough
+sustained ticks (no single-individual limbo). Growth debt is cleared whenever a pop leaves the growth
+zone, so a brief spell of abundance doesn't bank a birth that lands ticks later during scarcity.
+Predation deaths use the same shape (`PredationAccumulator`, see the predation section).
+
 The neutral zone lets species that accept "adequate" food (ease 3/5) stabilize instead of being
 perpetually starved. An accepted-food species can hold a tile even when better food is scarce.
 

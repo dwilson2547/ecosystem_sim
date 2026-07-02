@@ -354,9 +354,19 @@ public class World
 
             if (satisfaction >= GrowthThreshold)
             {
-                pop.Count += (int)Math.Ceiling(pop.Count * pop.Species.ReproductionRate);
-                if (pop.Species.MaxCount > 0)
-                    pop.Count = Math.Min(pop.Count, pop.Species.MaxCount);
+                // fractional births accumulate so a very slow reproducer grows at its true rate
+                // rather than the old Math.Ceiling forcing at least +1 every tick. a well-fed
+                // Count=1 pop still grows eventually — it just takes several ticks to bank a whole
+                // individual instead of doubling instantly (preserves the no-stranding invariant).
+                pop.ReproductionAccumulator += pop.Count * pop.Species.ReproductionRate;
+                var births = (int)pop.ReproductionAccumulator;
+                pop.ReproductionAccumulator -= births;
+                pop.Count += births;
+                if (pop.Species.MaxCount > 0 && pop.Count >= pop.Species.MaxCount)
+                {
+                    pop.Count = pop.Species.MaxCount;
+                    pop.ReproductionAccumulator = 0f; // at cap, don't hoard growth debt for later
+                }
                 pop.StarvationAccumulator = 0f;
             }
             else if (satisfaction <= StarvationThreshold)
@@ -367,11 +377,13 @@ public class World
                 pop.StarvationAccumulator -= deaths;
                 pop.Count -= deaths;
                 if (pop.Count == 0) pop.StarvationAccumulator = 0f;
+                pop.ReproductionAccumulator = 0f; // starving — clear any banked growth
             }
             else
             {
-                // neutral zone [0.50, 0.85) — neither grow nor starve; clear starvation debt
+                // neutral zone [0.50, 0.85) — neither grow nor starve; clear both debts
                 pop.StarvationAccumulator = 0f;
+                pop.ReproductionAccumulator = 0f;
             }
         }
     }
@@ -711,6 +723,7 @@ public class World
             existing.WaterExposure        = (existing.WaterExposure        * existing.Count + pop.WaterExposure        * pop.Count) / total;
             existing.StarvationAccumulator = (existing.StarvationAccumulator * existing.Count + pop.StarvationAccumulator * pop.Count) / total;
             existing.PredationAccumulator  = (existing.PredationAccumulator  * existing.Count + pop.PredationAccumulator  * pop.Count) / total;
+            existing.ReproductionAccumulator = (existing.ReproductionAccumulator * existing.Count + pop.ReproductionAccumulator * pop.Count) / total;
             existing.Count += pop.Count;
             pop.Faction?.Populations.Remove(pop);
             return existing;
