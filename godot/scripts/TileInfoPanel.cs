@@ -41,6 +41,7 @@ public partial class TileInfoPanel : CanvasLayer
         _content.MouseFilter = Control.MouseFilterEnum.Ignore;
         _panel.Visible = false;
         SimManager.Instance.Ticked += OnTicked;
+        SimManager.Instance.WorldReset += HidePanel;
     }
 
     public void ShowTile(Tile tile)

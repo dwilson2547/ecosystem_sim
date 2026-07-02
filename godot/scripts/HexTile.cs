@@ -151,12 +151,14 @@ public partial class HexTile : Node2D
 
     private static Color TerrainColor(TerrainType t) => t switch
     {
-        TerrainType.Plains   => new Color(0.55f, 0.72f, 0.35f),
-        TerrainType.Forest   => new Color(0.15f, 0.42f, 0.18f),
-        TerrainType.Swamp    => new Color(0.26f, 0.42f, 0.32f),
-        TerrainType.Desert   => new Color(0.88f, 0.78f, 0.42f),
-        TerrainType.Highland => new Color(0.56f, 0.56f, 0.56f),
-        TerrainType.River    => new Color(0.25f, 0.52f, 0.88f),
-        _                    => Colors.Gray,
+        TerrainType.Plains       => new Color(0.55f, 0.72f, 0.35f),
+        TerrainType.Forest       => new Color(0.15f, 0.42f, 0.18f),
+        TerrainType.Swamp        => new Color(0.26f, 0.42f, 0.32f),
+        TerrainType.Desert       => new Color(0.88f, 0.78f, 0.42f),
+        TerrainType.Highland     => new Color(0.56f, 0.56f, 0.56f),
+        TerrainType.River        => new Color(0.25f, 0.52f, 0.88f),
+        TerrainType.ShallowOcean => new Color(0.20f, 0.65f, 0.85f),
+        TerrainType.DeepOcean    => new Color(0.08f, 0.20f, 0.55f),
+        _                        => Colors.Gray,
     };
 }

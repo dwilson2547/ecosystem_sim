@@ -32,12 +32,13 @@ testing trivial and makes frontend integration straightforward — just call `Ti
 **Per tile** (inner loop over all tiles):
 1. `RegenerateResources` — pool regen scaled by season multiplier + fertilizer bonus
 2. `DistributeResources` — proportional resource distribution, sets `LastSatisfaction`
-3. `ApplyGrowthAndDeath` — population change based on satisfaction
-4. `ApplyWaterExposure` — drowning losses for populations stranded on River terrain
-5. `ProduceByproducts` — each individual emits byproducts at species rate
-6. `DecayByproducts` — byproduct pools decay 10%/tick
-7. `ApplyTerrainDegradation` — converts terrain (e.g. Forest → Plains) if its defining food
-   stratum has stayed denuded long enough
+3. `HuntPrey` — carnivores consume prey populations; sets predator `LastSatisfaction`
+4. `ApplyGrowthAndDeath` — population change based on satisfaction (three-zone: grow ≥ 0.85, die ≤ 0.50)
+5. `ApplyWaterExposure` — drowning losses for populations stranded on River terrain
+6. `ProduceByproducts` — each individual emits byproducts at species rate
+7. `DecayByproducts` — byproduct pools decay 10%/tick
+8. `ApplyTerrainDegradation` — converts terrain (e.g. Forest → Plains) if its defining food
+   subtype has stayed denuded long enough
 
 **Global** (after all tiles processed):
 8. `Migrate` — batch-compute all moves, then apply
@@ -59,39 +60,40 @@ testing trivial and makes frontend integration straightforward — just call `Ti
 
 ---
 
-## Resources & food strata
+## Resources & food pools
 
-`ResourceType` has four values: `Ground`, `Brush`, `Canopy` (the three food strata) and `Water`.
-`ResourcePool` fields: `Type`, `Amount`, `Capacity`, `RegenPerTick`.
+`ResourceType` has three values: `Food`, `Water`, and `Prey`. Every food `ResourcePool` also
+carries a nullable `FoodSubtype` tag that identifies what it contains — `Graze`, `Browse`, `Fruit`,
+`Roots` for land pools, and `Fish`, `Shrimp`, `Crustacean`, `Squid`, `Whale` for ocean pools.
+`Prey` is consumed directly from other populations (not from resource pools) — see **Predation**.
+
+`ResourcePool` fields: `Type`, `FoodSubtype?`, `Amount`, `Capacity`, `RegenPerTick`.
 
 Regen each tick:
 ```
 effectiveRegen = RegenPerTick × seasonMultiplier
-if not Water: effectiveRegen += fertilizerAmount × 0.02   (FertilizerBoost, applies to all 3 food strata)
+if pool.Type == Food: effectiveRegen += fertilizerAmount × 0.02   (FertilizerBoost)
 pool.Amount = min(pool.Capacity, pool.Amount + effectiveRegen)
 ```
 
 `DistributeResources` splits into two independent passes:
 
-**`DistributeWater`** — plain supply/demand, unchanged from the original single-resource model:
-when total demand > supply, each population gets `(their demand / total demand) × available
-supply`. Satisfaction = `received / demanded`.
+**`DistributeWater`** — plain supply/demand: when total demand > supply, each population gets
+`(their demand / total demand) × available supply`. Satisfaction = `received / demanded`.
 
-**`DistributeFood`** — a population has one aggregate `FoodConsumptionRate`, not a per-stratum
-rate. It's split across Ground/Brush/Canopy at consumption time:
+**`DistributeFood`** — a population has one aggregate `FoodConsumptionRate` (density-drained).
+It's split across food pools at consumption time, weighted by ease and availability:
 ```
-weight[stratum]  = species.EffectiveEase(stratum, tile.Terrain) × pool[stratum].Amount
-preferred[stratum] = demand × weight[stratum] / Σ weight
+weight[pool]  = species.EffectiveEase(pool.FoodSubtype) × pool.Amount
+demand[pool]  = totalDemand × weight[pool] / Σ weight
 ```
-So a population's demand gravitates toward whatever stratum is both easy for it to eat AND
-actually present — not a fixed per-species ratio. If collectively over-requested, each stratum's
-grant is scaled down the same proportional way as `DistributeWater` (`min(pool.Amount /
-totalRequested, 1)`), computed once before any pool is consumed so the ratio isn't affected by
-processing order. A stratum with `EffectiveEase == 0` gets zero weight and is never touched no
-matter how much sits there unconsumed — ease-of-eating is a hard diet gate, not a soft preference.
+Demand gravitates toward pools that are both easy to eat AND actually present. If collectively
+over-requested, each pool's grant is scaled proportionally before any pool is consumed — order
+of processing doesn't affect the result. A pool with EffectiveEase == 0 gets zero weight and is
+never touched — ease-of-eating is a hard diet gate, not a soft preference.
 
-A population's `LastSatisfaction` is the **minimum** of its food satisfaction and water
-satisfaction. One scarce resource tanks full satisfaction even if the other is plentiful.
+A population's `LastSatisfaction` is the **minimum** of food and water satisfaction. One scarce
+resource tanks full satisfaction even if the other is plentiful.
 
 See `docs/food-types.md` for the ease-of-eating table and terrain composition design.
 
@@ -111,85 +113,80 @@ groups are unaffected; the penalty only bites once a tile gets crowded. Constant
 
 ## Terrain
 
-Six terrain types set on `Tile.Terrain` during world creation. Static at the individual-tile
+Eight terrain types set on `Tile.Terrain` during world creation. Static at the individual-tile
 level (a Plains tile's baseline stays Plains) but no longer immutable overall — see **Terrain
-degradation** below.
+degradation** below. Land and ocean are biome-separated: species cannot migrate across the
+land/ocean boundary (enforced in `BestNeighborByValue` via `TerrainStats.IsOcean()`).
 
-| Terrain  | Total food regen | Water (% of River) | Migration cost |
-|----------|-------------------|---------------------|----------------|
-| Plains   | 10/tick           | ~10%                | 1.0×           |
-| Forest   | 15/tick           | ~10%                | 1.4×           |
-| Swamp    | 7/tick            | ~15%                | 1.8×           |
-| Desert   | 3/tick            | 0-5%                | 0.8×           |
-| Highland | 8/tick            | ~5%                 | 1.5×           |
-| River    | 12/tick           | 100% (15/tick, 200 cap) | 1.0×       |
+| Terrain      | Total food regen | Water            | Migration cost |
+|--------------|-------------------|------------------|----------------|
+| Plains       | 10/tick           | ~10% of River    | 1.0×           |
+| Forest       | 15/tick           | ~10% of River    | 1.4×           |
+| Swamp        | 7/tick            | ~15% of River    | 1.8×           |
+| Desert       | 3/tick            | 0-5% of River    | 0.8×           |
+| Highland     | 8/tick            | ~5% of River     | 1.5×           |
+| River        | 12/tick           | 100% (15/tick, 200 cap) | 1.0×    |
+| ShallowOcean | 20/tick           | none             | 1.0×           |
+| DeepOcean    | 15/tick           | none             | 1.2×           |
 
-**Food composition.** Each terrain's total food regen/capacity is split across Ground/Brush/Canopy
-by `TerrainStats.FoodComposition` — a min/max percentage range per stratum, sampled independently
-per tile at world-seed time then normalized so the three sampled values sum to 100%:
+**Food composition.** Each terrain's total food regen/capacity is split across typed food pools
+by `TerrainStats.FoodComposition` — a min/max percentage range per FoodSubtype, sampled
+independently per tile at world-seed time then normalized to sum to 100%:
 
-| Terrain  | Ground   | Brush    | Canopy  |
-|----------|----------|----------|---------|
-| Plains   | 60-75%   | 20-35%   | 0-5%    |
-| Forest   | 12-20%   | 12-20%   | 60-75%  |
-| Swamp    | 0-10%    | 40-55%   | 40-55%  |
-| Desert   | 5-15%    | 65-85%   | 0-10%   |
-| Highland | 25-40%   | 55-70%   | 0-5%    |
-| River    | 80-100%  | 5-10%    | 0-10%   |
+| Terrain      | Graze   | Browse   | Fruit   | Roots   | Fish    | Shrimp  | Crustacean | Squid   | Whale   |
+|--------------|---------|----------|---------|---------|---------|---------|------------|---------|---------|
+| Plains       | 60-75%  | 20-35%   | 0-5%    | —       | —       | —       | —          | —       | —       |
+| Forest       | 12-20%  | 12-20%   | 60-75%  | —       | —       | —       | —          | —       | —       |
+| Swamp        | 0-10%   | 40-55%   | —       | 40-55%  | —       | —       | —          | —       | —       |
+| Desert       | 5-15%   | 65-85%   | 0-10%   | —       | —       | —       | —          | —       | —       |
+| Highland     | 25-40%  | 55-70%   | 0-5%    | —       | —       | —       | —          | —       | —       |
+| River        | 80-100% | 5-10%    | —       | —       | 0-10%   | —       | —          | —       | —       |
+| ShallowOcean | —       | —        | —       | —       | 30-40%  | 40-55%  | 15-25%     | —       | —       |
+| DeepOcean    | —       | —        | —       | —       | 20-30%  | —       | —          | 50-65%  | 10-20%  |
 
-Because ranges are sampled independently rather than forced to sum to 100 upfront, a terrain with
-a wide range (River's Ground 80-100) dominates the tile's composition while still leaving room
-for tile-to-tile variety.
-
-**Water.** Every terrain now has a Water pool (previously only River/Swamp did), scaled off
-River as the reference "full water" tile via `TerrainStats._waterPercentOfRiver` — sampled per
-tile the same way as `FoodComposition`: `waterRegen = 15 × pct/100`, `waterCapacity = 200 × pct/100`.
+**Water.** Every non-ocean terrain has a Water pool, scaled off River as the reference tile:
+`waterRegen = 15 × pct/100`, `waterCapacity = 200 × pct/100`. Ocean tiles carry no Water pool.
 
 Both `WorldSeeder` and `DemoWorldSeeder` build every tile's resource pools with a single shared
 call, `TerrainStats.BuildResourcePools(terrain, random)` — this is also what
-`World.ApplyTerrainDegradation` calls at runtime, so a tile that degrades gets a pool set
-structurally identical to one that was seeded that way from the start. `World` itself never
-samples ranges directly; it just consumes whatever pools it's given.
-
-River also applies a flat **-1 ease-of-eating penalty** (`TerrainStats.EaseOfEatingPenalty`) to
-every species on that tile, on top of the composition above — see `docs/food-types.md`.
+`World.ApplyTerrainDegradation` calls at runtime, so a degraded tile gets pools structurally
+identical to one seeded that way from the start.
 
 Migration cost is used as a **tiebreaker** in `BestNeighborByValue` — when multiple neighbors
-have similar value, prefer the one with lower entry cost. Resources are always the primary
-driver; terrain only steers when options are similar.
+have similar value, prefer the one with lower entry cost.
 
-**Terrain degradation.** `TerrainStats.Degradation` maps a terrain to `(TriggerStratum,
-DegradesTo)` — currently only `Forest → (Canopy, Plains)`. Each tick, `ApplyTerrainDegradation`
-checks the trigger stratum's `Amount / Capacity`:
+**Terrain degradation.** `TerrainStats.Degradation` maps a terrain to `(TriggerSubtype,
+DegradesTo)` — currently only `Forest → (FoodSubtype.Fruit, Plains)`. Each tick,
+`ApplyTerrainDegradation` checks the trigger pool's `Amount / Capacity`:
 ```
-if ratio < DegradationThresholdRatio (0.10): tile.DegradationPressure++
-else:                                        tile.DegradationPressure = max(0, pressure - 1)
-if pressure >= DegradationPressureTarget (60): tile.Terrain = DegradesTo; rebuild pools; pressure = 0
+if ratio < 0.10: tile.DegradationPressure++
+else:            tile.DegradationPressure = max(0, pressure - 1)
+if pressure >= 60: tile.Terrain = Plains; rebuild pools; pressure = 0
 ```
-This is the same pressure-accumulator shape as `WaterExposure`/`SizePressure` — sustained
-denudation, not a single bad tick, is what converts the tile. A Forest with a big Alamosaurus herd
-(ease 5 for Canopy) that keeps the Canopy pool pinned near empty for ~60 ticks (over two seasons)
-permanently becomes Plains, with a freshly sampled Plains pool set replacing the old Forest one —
-the tile doesn't remember its previous composition.
+Fruit (canopy-equivalent food) sustained below 10% capacity for ~60 ticks converts the Forest to
+Plains permanently. The tile's composition is rebuilt fresh from the Plains distribution — the old
+Forest pool set is discarded. Same pressure-accumulator shape as `WaterExposure`/`SizePressure`:
+sustained denudation, not a single bad tick, triggers conversion.
 
-**Demo world terrain map** (`WorldSeeder`):
+**Demo world terrain map** (`WorldSeeder`, 16×10):
 ```
-     x: 0  1  2  3  4  5  6  7  8  9
-y=0:    H  H  H  P  P  P  D  D  D  D
-y=1:    H  H  P  P  P  D  D  D  D  D   ← Highland Tric starts at (1,1)
-y=2:    H  F  F  F  P  P  P  D  D  D   ← Valley   Tric starts at (3,2)
-y=3:    P  F  R  R  R  P  P  P  D  D
-y=4:    P  F  R  R  R  R  P  P  P  D   ← River Alamo starts at (5,4)
-y=5:    P  P  R  R  R  R  R  P  P  P
-y=6:    P  S  S  R  R  R  P  P  F  P   ← Midland Para starts at (7,6)
-y=7:    P  S  S  S  P  P  P  F  F  P
-y=8:    D  S  P  P  P  P  F  F  F  D   ← Eastern Para starts at (8,8)
-y=9:    D  D  D  P  P  P  P  P  D  D
+     x:  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15
+y=0:     H  H  H  P  P  P  D  D  D  D  A  A  B  B  B  B
+y=1:     H  H  P  P  P  D  D  D  D  D  A  A  B  B  B  B  ← Highland Tric at (1,1)
+y=2:     H  F  F  F  P  P  P  D  D  D  A  A  B  B  B  B  ← Valley   Tric at (3,2)
+y=3:     P  F  R  R  R  P  P  P  D  D  A  A  B  B  B  B  ← Mosasaurus at (10,3)
+y=4:     P  F  R  R  R  R  P  P  P  D  A  A  B  B  B  B  ← River Alamo at (5,4)
+y=5:     P  P  R  R  R  R  R  P  P  P  A  A  B  B  B  B  ← Kronosaurus at (13,5)
+y=6:     P  S  S  R  R  R  P  P  F  P  A  A  B  B  B  B  ← Midland Para at (7,6); Plesiosaur at (11,6)
+y=7:     P  S  S  S  P  P  P  F  F  P  A  A  B  B  B  B
+y=8:     D  S  P  P  P  P  F  F  F  D  A  A  B  B  B  B  ← Eastern Para at (8,8)
+y=9:     D  D  D  P  P  P  P  P  D  D  A  A  B  B  B  B
 H=Highland  F=Forest  R=River  S=Swamp  D=Desert  P=Plains
+A=ShallowOcean  B=DeepOcean
 ```
 
-Triceratops start in Highland with no water — they need to migrate south to the River/Swamp
-band. This creates early-game pressure and interesting BFS migration paths.
+Triceratops start in Highland with no water — they need to migrate south to the River/Swamp band.
+Marine species occupy the right 6 columns and cannot migrate onto land.
 
 **Water exposure.** River is the one terrain that counts as *being in the water*, not just having
 water nearby (Swamp has a water pool but is still walkable land). No species can live there
@@ -240,14 +237,17 @@ stress from nearly-frozen water sources.
 
 `SpeciesDefinition` is immutable shared data. `Population` is a live, mutable group on one tile.
 
-**Growth:**
+**Growth — three-zone model:**
 ```csharp
-if (satisfaction >= 1f)
-    count += ceil(count × ReproductionRate)   // ceiling prevents single-individual limbo
-else
+if (satisfaction >= 0.85f)                          // abundance zone
+    count += ceil(count × ReproductionRate)
+else if (satisfaction <= 0.50f)                     // starvation zone
     deaths = ceil(count × StarvationRate × (1 - satisfaction))
     count  = max(0, count - deaths)
+// neutral zone [0.50, 0.85): neither grow nor shrink
 ```
+The neutral zone lets species that accept "adequate" food (ease 3/5) stabilize instead of being
+perpetually starved. An accepted-food species can hold a tile even when better food is scarce.
 
 Dead populations (`Count = 0`) **stay on their tile** forever. They're rendered as `[EXTINCT]`
 and skipped by all simulation logic. Removing them would erase run history.
@@ -255,10 +255,11 @@ and skipped by all simulation logic. Removing them would erase run history.
 `LastSatisfaction` is set to `0f` for dead populations (not the default `1f`) — otherwise a
 Count=0 pop would appear to have 100% satisfaction.
 
-`SpeciesDefinition.EaseOfEating` (0-5 per stratum, unset defaults to 5 — a generalist) governs
-which food strata a population can actually eat and how readily — see `docs/food-types.md`. The
-three demo species: Triceratops (ground 5, brush 3, canopy 1), Parasaurolophus (ground 3, brush 5,
-canopy 2), Alamosaurus (ground 0, brush 2, canopy 5).
+`SpeciesDefinition.EaseOfEating` (0–5 scale keyed by FoodSubtype; empty dict = generalist at
+full ease) governs which food pools a population can eat and how readily. Land demo species:
+Triceratops (Graze 5, Browse 3, Fruit 1), Parasaurolophus (Browse 5, Graze 3, Fruit 2),
+Alamosaurus (Fruit 5, Browse 2). Marine demo species: Mosasaurus (Fish 4, Shrimp 3, Crustacean 2),
+Plesiosaur (Fish 5, Squid 3). Kronosaurus has no EaseOfEating (pure predator). See `docs/food-types.md`.
 
 ---
 
@@ -283,7 +284,7 @@ Demo species byproduct rates (Fertilizer):
 - Parasaurolophus: 0.06/individual/tick
 
 Fertilizer bonus on food regen: `fertAmount × 0.02` added to effective regen per tick, applied to
-all three food strata (Ground/Brush/Canopy), not Water. At max capacity (200 units), that's
+all `ResourceType.Food` pools, not Water. At max capacity (200 units), that's
 +4 food/tick on top of terrain base — meaningful for large River/Forest tiles with resident
 herbivore populations.
 
@@ -301,25 +302,25 @@ Two independent triggers, checked in order in `Migrate()`:
    the water-flee check didn't already move (or fail to move) the population this tick.
 
 Process for the resource-scarcity path (in `Migrate()`):
-1. Find the most-lacking need (`MostLackingNeed`) — Food or Water, whichever has the worse
-   supply/demand ratio. Food's "supply" side is `EffectiveFoodValue` (ease-weighted sum across
-   strata), not a raw pool amount.
-2. Find best destination: `BestNeighborForFood` (ease-weighted `EffectiveFoodValue`) or
-   `BestNeighborForWater` (plain pool amount) depending on which need is lacking — both are thin
-   wrappers over the shared `BestNeighborByValue` search
+1. Find the most-lacking need (`MostLackingNeed`) — Food, Water, or Prey, whichever has the
+   worst supply/demand ratio. Food supply = `EffectiveFoodValue` (ease-weighted sum across
+   food pools). Prey supply = `EffectivePreyAmount` (preferred prey at full weight, accepted at 2/3).
+2. Find best destination: `BestNeighborForFood`, `BestNeighborForWater`, or `BestNeighborForPrey`
+   depending on which need is lacking — all are thin wrappers over `BestNeighborByValue`. All
+   searches respect the biome barrier (`IsOcean()` filter).
 3. Collect all moves without applying
 4. Apply all moves; merge into existing same-species same-faction pop if present, blending
    evolved traits weighted by count
 
 `BestNeighborByValue` (parameterized on a `Tile -> float` value function):
 - **Primary**: immediate neighbor with strictly more value, prefer lower migration cost as
-  tiebreaker
+  tiebreaker; biome barrier enforced
 - **BFS fallback**: when no immediate neighbor has more (e.g. population in a resource desert),
   BFS up to 6 tiles deep, returns the *first step* toward the nearest tile with more
 
-`SustainableFoodCount`/`SustainableWaterCount` mirror the same Food/Water split for deciding how
-many individuals a tile can keep sustainably (only the excess migrates) — Food sums ease-weighted
-regen across all three strata, Water uses the plain pool regen.
+`SustainableFoodCount`/`SustainableWaterCount`/`SustainablePreyCount` decide how many individuals
+a tile can sustain (only the excess migrates) — Food sums ease-weighted regen across all food
+pools, Water uses plain pool regen, Prey uses current `EffectivePreyAmount` as supply proxy.
 
 **Merge blending:**
 ```csharp

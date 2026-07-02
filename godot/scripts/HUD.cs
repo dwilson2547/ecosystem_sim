@@ -36,14 +36,19 @@ public partial class HUD : CanvasLayer
 
         var hint = new Label
         {
-            Text        = "Space=pause  +/-=speed  MMB=pan  Wheel=zoom  LClick=inspect",
+            Text        = "Space=pause  +/-=speed  R=restart  MMB=pan  Wheel=zoom  LClick=inspect",
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
         hint.AddThemeColorOverride("font_color", new Color(0.7f, 0.7f, 0.7f));
         vbox.AddChild(hint);
 
+        var resetBtn = new Button { Text = "Restart [R]" };
+        resetBtn.Pressed += () => SimManager.Instance.Reset();
+        vbox.AddChild(resetBtn);
+
         SimManager.Instance.Ticked        += Refresh;
         SimManager.Instance.PausedChanged += OnPausedChanged;
+        SimManager.Instance.WorldReset    += Refresh;
         Refresh();
     }
 

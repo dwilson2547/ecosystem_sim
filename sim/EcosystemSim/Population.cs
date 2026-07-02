@@ -33,9 +33,18 @@ public class Population
     // accumulates +1 per tick while infected; each 30-tick crossing adds 0.02 to ImmunityDelta
     public float ImmunityPressure { get; set; }
 
-    // ticks spent stranded on water terrain (River); decays by 1/tick when off water.
-    // past WaterSurvivalThreshold the population starts drowning — nothing can live in the water indefinitely
+    // ticks spent stranded on River terrain; decays by 1/tick when off water.
+    // past WaterSurvivalThreshold the population starts drowning.
     public float WaterExposure { get; set; }
+
+    // ticks remaining before this population can migrate again; decrements each tick
+    public int MigrationCooldown { get; internal set; }
+
+    // set during Migrate(); cleared at the start of every tick
+    public bool JustMigrated { get; internal set; }
+
+    // fractional starvation deaths carried across ticks; applied when accumulator ≥ 1
+    public float StarvationAccumulator { get; set; }
 
     // ── effective stats (base species trait + evolution modifier) ─────────────
 
@@ -43,7 +52,8 @@ public class Population
 
     public float EffectiveImmunity => MathF.Min(1f, Species.Immunity + ImmunityDelta);
 
-    // food consumption scales with size; water does not
-    public float EffectiveFoodDemand  => Species.FoodConsumptionRate * SizeIndex;
+    // food and prey consumption scale with size; water does not
+    public float EffectiveFoodDemand  => Species.FoodConsumptionRate  * SizeIndex;
     public float EffectiveWaterDemand => Species.WaterConsumptionRate;
+    public float EffectivePreyDemand  => Species.PreyConsumptionRate  * SizeIndex;
 }
