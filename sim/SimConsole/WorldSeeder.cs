@@ -159,7 +159,7 @@ public static class WorldSeeder
             "PFRRRPPPDDAABBBB", // y=3  Mosasaurus at (10,3)
             "PFRRRRPPPDAABBBB", // y=4  River Alamo at (5,4)
             "PPRRRRRPPPAABBBB", // y=5  Kronosaurus at (13,5)
-            "PSSRRRPPFPAABBBB", // y=6  Midland Para at (7,6)  Plesiosaur at (11,6)
+            "PSSRRRPPFPAABBBB", // y=6  Midland Para at (7,6)  Plesiosaur at (12,6) DeepOcean
             "PSSSPPPFFPAABBBB", // y=7
             "DSPPPPFFFDAABBBB", // y=8  Eastern Para at (8,8)
             "DDDPPPPPDDAABBBB", // y=9
@@ -219,7 +219,7 @@ public static class WorldSeeder
 
         // marine: shallow zone (x=10-11) and deep zone (x=12-15)
         Place(mosaPack,    10,  3, 30);
-        Place(plesioDrift, 11,  6, 20);
+        Place(plesioDrift, 12,  6, 20);   // DeepOcean home; forays to adjacent ShallowOcean for fish
         Place(kronosPod,   13,  5,  8);
         Place(theMegalodon, 14,  4,  1);
 

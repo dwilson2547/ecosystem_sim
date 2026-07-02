@@ -479,6 +479,36 @@ public class WorldTests
     }
 
     [Fact]
+    public void Tick_TensionNeverEscalatesToWarWhileDiplomaticWarDisabled()
+    {
+        // war is defanged for now (DiplomaticWarEnabled = false): tension still accumulates, but the
+        // state must never reach AtWar, so nothing gets declared-war'd into extinction. two maximally
+        // aggressive, resource-competing factions crammed onto the same tile is the worst case.
+        var world   = new World();
+        var species = new SpeciesDefinition { Name = "Warmonger", WarAggression = 1f, FoodConsumptionRate = 5f, ReproductionRate = 0, StarvationRate = 0 };
+
+        var factionA = new Faction { Name = "A", PrimarySpecies = species };
+        var factionB = new Faction { Name = "B", PrimarySpecies = species };
+        world.State.Factions.AddRange([factionA, factionB]);
+
+        var popA = new Population { Species = species, Count = 50 };
+        var popB = new Population { Species = species, Count = 50 };
+        factionA.AddPopulation(popA);
+        factionB.AddPopulation(popB);
+        // same starved tile → max aggression + proximity + resource-competition pressure
+        world.State.Map.GetTile(0, 0).AddPopulation(popA);
+        world.State.Map.GetTile(0, 0).AddPopulation(popB);
+        world.State.Map.GetTile(0, 0).Resources.Add(EmptyFood());
+
+        for (var i = 0; i < 60; i++) world.Tick();
+
+        Assert.NotEqual(DiplomaticState.AtWar, factionA.Relations[factionB].State);
+        Assert.True(factionA.Relations[factionB].TensionScore > 0, "tension should still accumulate as dormant scaffolding");
+        Assert.Equal(50, popA.Count); // no combat casualties while war is disabled
+        Assert.Equal(50, popB.Count);
+    }
+
+    [Fact]
     public void Tick_WellFedLowAggressionFactionsDoNotEscalate()
     {
         var world   = new World();
@@ -1413,6 +1443,42 @@ public class WorldTests
         world.Tick();
 
         Assert.Equal(1f, hunterPop.LastSatisfaction, 3);
+    }
+
+    [Fact]
+    public void HuntPrey_DualConsumerLivesOnFoodWhenNoPreyPresent()
+    {
+        // regression: a dual-consumption predator (FoodConsumptionRate > 0, e.g. the Megalodon
+        // living on fish between hunts) sitting on a tile with abundant food but no prey must keep
+        // its food-based satisfaction. HuntPrey used to hard-zero every hunter when prey was absent,
+        // which pinned the apex at sat 0 → flagged perpetually starving → dragged into a war it lost.
+        var world = new World();
+        var tile  = world.State.Map.GetTile(0, 0);
+        tile.Resources.Add(AbundantFood());
+
+        var dualPredator = new SpeciesDefinition
+        {
+            Name = "Apex",
+            FoodConsumptionRate = 1f,
+            EaseOfEating = { [FoodSubtype.Graze] = 3f },
+            PreyConsumptionRate = 3f,               // hunter, but no prey on this tile
+            PreferredPrey = [PreyCategory.LargeHerbivore],
+            ReproductionRate = 0f,
+            StarvationRate = 0f,
+        };
+        var apex = new Population { Species = dualPredator, Count = 1 };
+
+        // a pure predator (no food consumption) on the same prey-less tile still goes hungry
+        var purePredator = PredatorSpecies("PureHunter", rate: 1f, preferred: PreyCategory.LargeHerbivore);
+        var pure = new Population { Species = purePredator, Count = 1 };
+
+        tile.Populations.AddRange([apex, pure]);
+
+        world.Tick();
+
+        Assert.True(apex.LastSatisfaction >= 0.85f,
+            $"dual-consumer should stay fed on food, got {apex.LastSatisfaction}");
+        Assert.Equal(0f, pure.LastSatisfaction, 3);
     }
 
     [Fact]

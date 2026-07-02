@@ -196,6 +196,17 @@ peace drift (−0.03/tick) keeps moderate-aggression well-fed species from alway
 exhaustion kicks in after 20 ticks of conflict. Combat is simultaneous: damage =
 attacker_count × combat_strength × 0.02/tick for every at-war pair on the same tile.
 
+> **Declarative war is currently DISABLED** (`World.DiplomaticWarEnabled = false`). The faction layer
+> is half-built scaffolding — a *true* faction won't exist until symbiotic relationships between
+> species are introduced — and tension-driven AtWar was warring peaceful species into extinction
+> (a lone apex Megalodon reads as perpetually starving with no prey on its tile, drags every
+> neighbour to war, and dies as a Count=1 unit). Tension still accumulates and states still resolve
+> up to **Tense**; they just never escalate to AtWar, so `ResolveCombat` never fires and war never
+> breaks trade. Combat still works when a war is set directly (tests, future player commands). The
+> intended replacement is a **territorial model** — populations migrate into each other and brawl on
+> a shared tile until one retreats — built alongside the faction/symbiosis work, not declarative war.
+> Don't extend or "fix" the tension→war system; it's slated for replacement.
+
 ### 13. Evolution
 Two pressure accumulators, not per-tick change:
 
@@ -303,7 +314,16 @@ what it needs on specific tiles. Key helpers in `WorldTests.cs`:
 4. **Procedural map generation** — rivers, biomes, mountain ranges; replaces the hardcoded
    terrain string in `WorldSeeder`
 5. **Player interventions** — meteor strike, terraforming, population seeding mid-run
-6. **Faction memory** — grudges, reputation, vassal relationships
+6. **Symbiosis + real factions** — the current faction layer is provisional scaffolding. A true
+   faction should emerge from **symbiotic relationships between different dino types**, not be assigned
+   at seed time. This is the gateware for the rest of the faction/diplomacy work below.
+7. **Territorial conflict** (replaces declarative war, see §12) — populations migrate into each other
+   and brawl on a shared tile until one retreats, instead of accumulating tension → AtWar. Build with
+   the faction/symbiosis work; re-enable or delete `DiplomaticWarEnabled` at that point.
+8. **Active apex predators** — the Megalodon currently survives fully on fish and never migrates to
+   hunt (sat stays at 1.0). If apexes should exert top-down control, fish must not *fully* sate a
+   hunter (lower food ease / raise `MigrationThreshold`, or a hunger-to-hunt drive).
+9. **Faction memory** — grudges, reputation, vassal relationships
 
 See `docs/implementation.md` for mechanics of every implemented system,
 `docs/food-types.md` for typed food subtype mechanics, and

@@ -245,7 +245,12 @@ public class World
 
         if (preyPops.Count == 0)
         {
-            foreach (var h in hunters) h.LastSatisfaction = 0f;
+            // no prey on the tile — a pure predator goes hungry (sat 0), but a dual-consumption
+            // predator (FoodConsumptionRate > 0) lives off the food it ate this tick, so leave its
+            // food-based satisfaction intact instead of zeroing it. mirrors "survives on fish
+            // between hunts" and stops a well-fed apex reading as perpetually starving.
+            foreach (var h in hunters)
+                if (h.Species.FoodConsumptionRate <= 0f) h.LastSatisfaction = 0f;
             return;
         }
 
@@ -991,12 +996,23 @@ public class World
         b.Relations[a].TicksAtWar   = a.Relations[b].TicksAtWar;
     }
 
+    // Declarative faction war is disabled for now. Dinosaur "factions" are still half-built
+    // scaffolding (a real faction won't exist until symbiotic relationships between species land),
+    // and tension-driven AtWar was warring peaceful species into extinction — e.g. a lone apex
+    // Megalodon, which reads as perpetually starving with no prey on its tile, dragging every
+    // neighbour to war and getting slaughtered as a Count=1 unit. Tension is still tracked
+    // (Allied/Neutral/Tense) as dormant scaffolding; it simply never escalates to war, so
+    // ResolveCombat never fires and trade never breaks on war. Combat still works when a war is set
+    // directly (tests, future player commands). Replace with the territorial migrate-in-and-brawl
+    // model when factions + symbiosis arrive; flip this to true to restore the old behaviour.
+    private const bool DiplomaticWarEnabled = false;
+
     private static DiplomaticState TensionToState(float tension) => tension switch
     {
         < -0.5f => DiplomaticState.Allied,
         < 0.5f  => DiplomaticState.Neutral,
         < 1.5f  => DiplomaticState.Tense,
-        _       => DiplomaticState.AtWar
+        _       => DiplomaticWarEnabled ? DiplomaticState.AtWar : DiplomaticState.Tense
     };
 
     private static int MinDistance(Faction a, Faction b) =>
