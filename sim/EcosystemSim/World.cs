@@ -13,6 +13,7 @@ public class World
         {
             RegenerateResources(tile);
             DistributeResources(tile);
+            HuntPrey(tile);
             ApplyGrowthAndDeath(tile);
             ProduceByproducts(tile);
             DecayByproducts(tile);
@@ -114,6 +115,7 @@ public class World
     }
 
     private const float AcceptedFoodValue = 2f / 3f;
+    private const float AcceptedPreyValue = 2f / 3f;
 
     private static void DistributeFood(Tile tile)
     {
@@ -237,6 +239,119 @@ public class World
         }
     }
 
+    // Resolves predator-prey interactions on a tile.
+    // Two-pass like DistributeTypedFood: preferred prey gives full satisfaction, accepted prey 2/3.
+    // Prey count is reduced immediately; predator LastSatisfaction is updated.
+    // Runs after DistributeResources so predator satisfaction is set before ApplyGrowthAndDeath.
+    private static void HuntPrey(Tile tile)
+    {
+        var hunters = tile.Populations
+            .Where(p => p.Count > 0 && p.Species.ConsumptionRates.ContainsKey(ResourceType.Prey))
+            .ToList();
+        if (hunters.Count == 0) return;
+
+        var preyPops = tile.Populations
+            .Where(p => p.Count > 0 && p.Species.AsPreyCategory.HasValue)
+            .ToList();
+
+        if (preyPops.Count == 0)
+        {
+            foreach (var h in hunters)
+                h.LastSatisfaction = 0f;
+            return;
+        }
+
+        var demand       = hunters.ToDictionary(h => h, h => h.Count * h.EffectiveConsumptionRate(ResourceType.Prey));
+        var received     = hunters.ToDictionary(h => h, _ => 0f);
+        var preyConsumed = preyPops.ToDictionary(p => p, _ => 0f);
+
+        float RemainingDemand(Population h)   => Math.Max(0f, demand[h] - received[h]);
+        float AvailablePrey(Population prey)  => Math.Max(0f, prey.Count - preyConsumed[prey]);
+
+        // pass 1: preferred prey — full satisfaction value
+        foreach (var preyPop in preyPops)
+        {
+            var cat      = preyPop.Species.AsPreyCategory!.Value;
+            var eligible = hunters.Where(h =>
+                h.Species.PreferredPrey.Count == 0 ||
+                h.Species.PreferredPrey.Contains(cat)
+            ).ToList();
+            if (eligible.Count == 0) continue;
+
+            var available   = AvailablePrey(preyPop);
+            var totalDemand = eligible.Sum(RemainingDemand);
+            if (totalDemand == 0 || available == 0) continue;
+
+            var ratio = Math.Min(1f, available / totalDemand);
+            foreach (var hunter in eligible)
+            {
+                var d = RemainingDemand(hunter);
+                if (d <= 0) continue;
+                var taken            = d * ratio;
+                preyConsumed[preyPop] += taken;
+                received[hunter]      += taken;
+            }
+        }
+
+        // pass 2: accepted prey — 2/3 satisfaction value, only for hunters still hungry
+        foreach (var preyPop in preyPops)
+        {
+            var cat      = preyPop.Species.AsPreyCategory!.Value;
+            var eligible = hunters.Where(h =>
+                h.Species.PreferredPrey.Count > 0 &&
+                !h.Species.PreferredPrey.Contains(cat) &&
+                h.Species.AcceptedPrey.Contains(cat) &&
+                RemainingDemand(h) > 0
+            ).ToList();
+            if (eligible.Count == 0) continue;
+
+            var available   = AvailablePrey(preyPop);
+            var totalDemand = eligible.Sum(RemainingDemand);
+            if (totalDemand == 0 || available == 0) continue;
+
+            var ratio = Math.Min(1f, available / totalDemand);
+            foreach (var hunter in eligible)
+            {
+                var d = RemainingDemand(hunter);
+                if (d <= 0) continue;
+                var taken             = d * ratio;
+                preyConsumed[preyPop] += taken;
+                received[hunter]      += taken * AcceptedPreyValue;
+            }
+        }
+
+        // apply prey deaths — ceiling so any nonzero hunt always claims at least one individual
+        foreach (var (preyPop, consumed) in preyConsumed)
+        {
+            var deaths = Math.Min(preyPop.Count, (int)Math.Ceiling(consumed));
+            preyPop.Count = Math.Max(0, preyPop.Count - deaths);
+        }
+
+        // update hunter satisfaction (min with any water satisfaction already applied)
+        foreach (var hunter in hunters)
+        {
+            var d = demand[hunter];
+            if (d == 0) continue;
+            var sat = Math.Min(1f, received[hunter] / d);
+            hunter.LastSatisfaction = Math.Min(hunter.LastSatisfaction, sat);
+        }
+    }
+
+    // Effective prey count on a tile for a given predator species, weighted by prey preference.
+    private static float EffectivePreyAmount(Tile tile, SpeciesDefinition species)
+    {
+        float total = 0f;
+        foreach (var pop in tile.Populations.Where(p => p.Count > 0 && p.Species.AsPreyCategory.HasValue))
+        {
+            var cat = pop.Species.AsPreyCategory!.Value;
+            if (species.PreferredPrey.Count == 0 || species.PreferredPrey.Contains(cat))
+                total += pop.Count;
+            else if (species.AcceptedPrey.Contains(cat))
+                total += pop.Count * AcceptedPreyValue;
+        }
+        return total;
+    }
+
     private static void ApplyGrowthAndDeath(Tile tile)
     {
         // Three-zone model: grow when well-fed, neutral in the middle, starve only when truly scarce.
@@ -325,6 +440,8 @@ public class World
             float effectiveRegen;
             if (type == ResourceType.Food)
                 effectiveRegen = EffectiveFoodRegen(tile, pop.Species);
+            else if (type == ResourceType.Prey)
+                effectiveRegen = EffectivePreyAmount(tile, pop.Species); // current prey count as proxy
             else
             {
                 var pool = tile.Resources.FirstOrDefault(r => r.Type == type);
@@ -657,6 +774,9 @@ public class World
             ByproductRates   = newByproducts,
             FoodPreferences  = parent.FoodPreferences,
             AcceptedFoods    = parent.AcceptedFoods,
+            AsPreyCategory   = parent.AsPreyCategory,
+            PreferredPrey    = parent.PreferredPrey,
+            AcceptedPrey     = parent.AcceptedPrey,
             CombatStrength   = parent.CombatStrength   * MathF.Sqrt(sizeIndex),
             ReproductionRate = parent.ReproductionRate / MathF.Sqrt(sizeIndex), // larger → slower repro
             StarvationRate   = parent.StarvationRate,
@@ -812,9 +932,12 @@ public class World
             var effectiveRate = pop.EffectiveConsumptionRate(resourceType);
             if (effectiveRate == 0) continue;
 
-            float available = resourceType == ResourceType.Food
-                ? EffectiveFoodAmount(tile, pop.Species)
-                : tile.Resources.FirstOrDefault(r => r.Type == resourceType)?.Amount ?? 0f;
+            float available = resourceType switch
+            {
+                ResourceType.Food => EffectiveFoodAmount(tile, pop.Species),
+                ResourceType.Prey => EffectivePreyAmount(tile, pop.Species),
+                _                 => tile.Resources.FirstOrDefault(r => r.Type == resourceType)?.Amount ?? 0f
+            };
 
             var ratio = available / (pop.Count * effectiveRate);
             if (ratio < worstRatio)
@@ -871,10 +994,12 @@ public class World
         return null;
     }
 
-    private float EffectiveTileAmount(Population pop, Tile tile, ResourceType type) =>
-        type == ResourceType.Food
-            ? EffectiveFoodAmount(tile, pop.Species)
-            : tile.Resources.FirstOrDefault(r => r.Type == type)?.Amount ?? 0f;
+    private float EffectiveTileAmount(Population pop, Tile tile, ResourceType type) => type switch
+    {
+        ResourceType.Food => EffectiveFoodAmount(tile, pop.Species),
+        ResourceType.Prey => EffectivePreyAmount(tile, pop.Species),
+        _                 => tile.Resources.FirstOrDefault(r => r.Type == type)?.Amount ?? 0f
+    };
 
     // Total food amount on a tile, weighted by species' food preferences.
     private static float EffectiveFoodAmount(Tile tile, SpeciesDefinition species)

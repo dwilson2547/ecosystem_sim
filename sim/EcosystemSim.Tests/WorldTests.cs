@@ -1116,4 +1116,158 @@ public class WorldTests
         Assert.True(winterRegen < springRegen,
             $"winter regen ({winterRegen:F1}) should be much lower than spring regen ({springRegen:F1})");
     }
+
+    // ── HuntPrey tests ───────────────────────────────────────────────────────
+
+    private static SpeciesDefinition PreySpecies(string name, PreyCategory cat) => new()
+    {
+        Name = name, ConsumptionRates = { [ResourceType.Food] = 1f },
+        AsPreyCategory = cat, ReproductionRate = 0, StarvationRate = 0
+    };
+
+    private static SpeciesDefinition PredatorSpecies(string name, float rate,
+        IEnumerable<PreyCategory>? preferred = null, IEnumerable<PreyCategory>? accepted = null) => new()
+    {
+        Name = name,
+        ConsumptionRates = { [ResourceType.Prey] = rate },
+        PreferredPrey = preferred is not null ? [..preferred] : [],
+        AcceptedPrey  = accepted  is not null ? [..accepted]  : [],
+        ReproductionRate = 0, StarvationRate = 0,
+    };
+
+    [Fact]
+    public void HuntPrey_ReducesPreyCountAndGivesPredatorFullSat()
+    {
+        var world    = new World();
+        var tile     = world.State.Map.GetTile(0, 0);
+        tile.Resources.Add(AbundantFood()); // keeps prey food-satisfied so growth doesn't interfere
+
+        var prey      = new Population { Species = PreySpecies("Rabbit", PreyCategory.SmallHerbivore), Count = 20 };
+        var predator  = new Population { Species = PredatorSpecies("Fox", 0.5f), Count = 10 };
+
+        tile.Populations.Add(prey);
+        tile.Populations.Add(predator);
+
+        world.Tick();
+
+        Assert.True(prey.Count < 20,     "prey count should be reduced by hunting");
+        Assert.Equal(1f, predator.LastSatisfaction, precision: 4);
+    }
+
+    [Fact]
+    public void HuntPrey_PreferredPreyGivesFullSat()
+    {
+        var world   = new World();
+        var tile    = world.State.Map.GetTile(0, 0);
+        tile.Resources.Add(AbundantFood());
+
+        var prey      = new Population { Species = PreySpecies("Deer", PreyCategory.SmallHerbivore), Count = 100 };
+        var predator  = new Population
+        {
+            Species = PredatorSpecies("Wolf", 0.5f, preferred: [PreyCategory.SmallHerbivore]),
+            Count = 4
+        };
+
+        tile.Populations.Add(prey);
+        tile.Populations.Add(predator);
+
+        world.Tick();
+
+        Assert.Equal(1f, predator.LastSatisfaction, precision: 4);
+    }
+
+    [Fact]
+    public void HuntPrey_AcceptedPreyGivesTwoThirdsSat()
+    {
+        var world   = new World();
+        var tile    = world.State.Map.GetTile(0, 0);
+        tile.Resources.Add(AbundantFood());
+
+        // predator prefers LargeHerbivore but only SmallHerbivore is on tile
+        var prey      = new Population { Species = PreySpecies("Goat", PreyCategory.SmallHerbivore), Count = 100 };
+        var predator  = new Population
+        {
+            Species = PredatorSpecies("Bear", 0.5f,
+                preferred: [PreyCategory.LargeHerbivore],
+                accepted:  [PreyCategory.SmallHerbivore]),
+            Count = 4
+        };
+
+        tile.Populations.Add(prey);
+        tile.Populations.Add(predator);
+
+        world.Tick();
+
+        // accepted prey gives 2/3 satisfaction
+        Assert.True(predator.LastSatisfaction < 1f, "accepted prey should not give full satisfaction");
+        Assert.True(predator.LastSatisfaction > 0f, "accepted prey should give partial satisfaction");
+        Assert.Equal(2f / 3f, predator.LastSatisfaction, precision: 4);
+    }
+
+    [Fact]
+    public void HuntPrey_NoPreyOnTile_PredatorSatisfactionZero()
+    {
+        var world    = new World();
+        var tile     = world.State.Map.GetTile(0, 0);
+
+        var predator = new Population
+        {
+            Species = PredatorSpecies("Hungry", 1f, preferred: [PreyCategory.SmallHerbivore]),
+            Count   = 5
+        };
+        tile.Populations.Add(predator);
+
+        world.Tick();
+
+        Assert.Equal(0f, predator.LastSatisfaction);
+    }
+
+    [Fact]
+    public void HuntPrey_TwoPredatorsShareAvailablePrey()
+    {
+        var world  = new World();
+        var tile   = world.State.Map.GetTile(0, 0);
+        tile.Resources.Add(AbundantFood());
+
+        // 1 prey, two predators each demand 1 — prey shared proportionally so each gets ~0.5 sat
+        var prey  = new Population { Species = PreySpecies("Mouse", PreyCategory.SmallHerbivore), Count = 1 };
+        var pred1 = new Population { Species = PredatorSpecies("CatA", 0.5f), Count = 2 };
+        var pred2 = new Population { Species = PredatorSpecies("CatB", 0.5f), Count = 2 };
+
+        tile.Populations.Add(prey);
+        tile.Populations.Add(pred1);
+        tile.Populations.Add(pred2);
+
+        world.Tick();
+
+        // both predators should be equally (partially) satisfied
+        Assert.True(pred1.LastSatisfaction > 0f && pred1.LastSatisfaction < 1f);
+        Assert.Equal(pred1.LastSatisfaction, pred2.LastSatisfaction, precision: 4);
+    }
+
+    [Fact]
+    public void HuntPrey_PredatorMigratesWhenNoPreyOnTile()
+    {
+        var world     = new World();
+        var emptyTile = world.State.Map.GetTile(0, 0);
+        var preyTile  = world.State.Map.GetTile(1, 0);
+        preyTile.Resources.Add(AbundantFood());
+
+        var preySpecies = PreySpecies("Elk", PreyCategory.LargeHerbivore);
+        var preyPop     = new Population { Species = preySpecies, Count = 50 };
+        preyTile.Populations.Add(preyPop);
+
+        var predator = new Population
+        {
+            Species = PredatorSpecies("T-Rex", 0.1f, preferred: [PreyCategory.LargeHerbivore]),
+            Count   = 5
+        };
+        emptyTile.Populations.Add(predator);
+
+        world.Tick();
+
+        // predator finds no prey, gets sat=0, migrates to adjacent tile with prey
+        Assert.Empty(emptyTile.Populations.Where(p => p.Count > 0));
+        Assert.Contains(preyTile.Populations, p => p.Species.Name == "T-Rex" && p.Count > 0);
+    }
 }

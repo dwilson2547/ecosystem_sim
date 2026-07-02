@@ -20,6 +20,19 @@ public class SpeciesDefinition
     // food subtypes this species will eat if preferred food is scarce (2/3 satisfaction)
     public HashSet<FoodSubtype> AcceptedFoods { get; init; } = [];
 
+    // what prey category this species represents when hunted (null = cannot be preyed upon)
+    public PreyCategory? AsPreyCategory { get; init; } = null;
+
+    // prey categories this carnivore actively hunts (full satisfaction)
+    // empty + PreyConsumptionRate > 0 = hunts any prey at full satisfaction
+    public HashSet<PreyCategory> PreferredPrey { get; init; } = [];
+
+    // prey categories this carnivore will eat if preferred prey is scarce (2/3 satisfaction)
+    public HashSet<PreyCategory> AcceptedPrey { get; init; } = [];
+
+    // convenience accessor — true if this species is a predator
+    public bool IsPredator => ConsumptionRates.ContainsKey(ResourceType.Prey);
+
     // fractional population growth per tick when fully satisfied
     public float ReproductionRate { get; init; } = 0.02f;
 

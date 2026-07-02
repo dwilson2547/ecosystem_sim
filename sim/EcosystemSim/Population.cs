@@ -39,7 +39,8 @@ public class Population
 
     public float EffectiveImmunity => MathF.Min(1f, Species.Immunity + ImmunityDelta);
 
-    // food consumption scales with size; other resources unchanged
+    // food and prey consumption scale with size; water unchanged
     public float EffectiveConsumptionRate(ResourceType type) =>
-        Species.ConsumptionRates.GetValueOrDefault(type) * (type == ResourceType.Food ? SizeIndex : 1f);
+        Species.ConsumptionRates.GetValueOrDefault(type) *
+        (type is ResourceType.Food or ResourceType.Prey ? SizeIndex : 1f);
 }

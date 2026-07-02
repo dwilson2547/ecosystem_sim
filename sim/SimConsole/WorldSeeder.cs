@@ -13,6 +13,7 @@ public static class WorldSeeder
             ConsumptionRates = { [ResourceType.Food] = 2f, [ResourceType.Water] = 1f },
             FoodPreferences  = { FoodSubtype.Graze },
             AcceptedFoods    = { FoodSubtype.Browse, FoodSubtype.Roots },
+            AsPreyCategory   = PreyCategory.SmallHerbivore,
             ByproductRates   = { [ByproductType.Fertilizer] = 0.08f },
             ReproductionRate = 0.015f,
             StarvationRate   = 0.015f,
@@ -29,6 +30,7 @@ public static class WorldSeeder
             ConsumptionRates = { [ResourceType.Food] = 5f, [ResourceType.Water] = 2f },
             FoodPreferences  = { FoodSubtype.Browse },
             AcceptedFoods    = { FoodSubtype.Fruit, FoodSubtype.Graze },
+            AsPreyCategory   = PreyCategory.LargeHerbivore,
             ByproductRates   = { [ByproductType.Fertilizer] = 0.20f },
             ReproductionRate = 0.008f,
             StarvationRate   = 0.008f,
@@ -45,6 +47,7 @@ public static class WorldSeeder
             ConsumptionRates = { [ResourceType.Food] = 1f },
             FoodPreferences  = { FoodSubtype.Fruit, FoodSubtype.Roots },
             AcceptedFoods    = { FoodSubtype.Graze, FoodSubtype.Browse },
+            AsPreyCategory   = PreyCategory.SmallHerbivore,
             ByproductRates   = { [ByproductType.Fertilizer] = 0.06f },
             ReproductionRate = 0.02f,
             StarvationRate   = 0.015f,
@@ -61,6 +64,7 @@ public static class WorldSeeder
             ConsumptionRates = { [ResourceType.Food] = 4f },
             FoodPreferences  = { FoodSubtype.Shrimp, FoodSubtype.Crustacean },
             AcceptedFoods    = { FoodSubtype.Fish },
+            AsPreyCategory   = PreyCategory.SmallMarine,
             ReproductionRate = 0.01f,
             StarvationRate   = 0.012f,
             MigrationThreshold = 0.85f,
@@ -76,12 +80,28 @@ public static class WorldSeeder
             ConsumptionRates = { [ResourceType.Food] = 4f },
             FoodPreferences  = { FoodSubtype.Whale, FoodSubtype.Squid },
             AcceptedFoods    = { FoodSubtype.Fish },
+            AsPreyCategory   = PreyCategory.LargeMarine,
             ReproductionRate = 0.006f,
             StarvationRate   = 0.008f,
             MigrationThreshold = 0.85f,
             WarAggression = 0.2f,
             CombatStrength = 3.0f,
             Immunity = 0.35f
+        };
+
+        var kronosaurus = new SpeciesDefinition
+        {
+            Name = "Kronosaurus",
+            RootName = "Kronosaurus",
+            ConsumptionRates = { [ResourceType.Prey] = 0.15f },
+            PreferredPrey    = { PreyCategory.LargeMarine },
+            AcceptedPrey     = { PreyCategory.SmallMarine },
+            ReproductionRate = 0.003f,
+            StarvationRate   = 0.012f,
+            MigrationThreshold = 0.85f,
+            WarAggression = 0.7f,
+            CombatStrength = 4.5f,
+            Immunity = 0.4f
         };
 
         var world = new World(16, 10);
@@ -180,8 +200,10 @@ public static class WorldSeeder
         var midlandPachy  = new Faction { Name = "Midland Pachy",  PrimarySpecies = pachycephalosaurus };
         var shallowFleet  = new Faction { Name = "Shallow Fleet",  PrimarySpecies = mosasaurus };
         var deepDwellers  = new Faction { Name = "Deep Dwellers",  PrimarySpecies = plesiosaur };
+        var marineHunters = new Faction { Name = "Marine Hunters", PrimarySpecies = kronosaurus };
 
-        world.State.Factions.AddRange([highlandTric, valleyTric, riverBrachio, easternPachy, midlandPachy, shallowFleet, deepDwellers]);
+        world.State.Factions.AddRange([highlandTric, valleyTric, riverBrachio, easternPachy, midlandPachy,
+                                        shallowFleet, deepDwellers, marineHunters]);
 
         void Place(Faction faction, int x, int y, int count)
         {
@@ -202,9 +224,10 @@ public static class WorldSeeder
         Place(midlandPachy, 7, 6, 60);
 
         // Marine species: strictly in their ocean biome
-        // y=5: "PPRRRRRPCCOOOOOO" → col 9=C (ShallowOcean), col 13=O (DeepOcean)
-        Place(shallowFleet, 9, 5,  20);
-        Place(deepDwellers, 13, 5, 12);
+        // y=5: "PPRRRRRPCCOOOOOO" → col 8,9=C (ShallowOcean), col 10–15=O (DeepOcean)
+        Place(shallowFleet,  9,  5, 20);   // ShallowOcean
+        Place(deepDwellers,  13, 5, 12);   // DeepOcean, far end
+        Place(marineHunters, 11, 5,  6);   // DeepOcean, between — hunts Plesio (preferred) or Mosa (accepted)
 
         return world;
     }
