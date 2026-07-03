@@ -34,6 +34,7 @@ public partial class FactionPanel : CanvasLayer
         scroll.AddChild(_content);
 
         SimManager.Instance.Ticked += Rebuild;
+        SimManager.Instance.WorldReset += Rebuild;
         Rebuild();
     }
 

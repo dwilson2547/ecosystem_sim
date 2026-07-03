@@ -58,6 +58,9 @@ public partial class SimMain : Node2D
             case Key.Minus:
                 SimManager.Instance.SpeedDown();
                 break;
+            case Key.R:
+                SimManager.Instance.Reset();
+                break;
         }
     }
 }

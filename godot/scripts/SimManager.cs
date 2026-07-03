@@ -27,6 +27,7 @@ public partial class SimManager : Node
 
     [Signal] public delegate void TickedEventHandler();
     [Signal] public delegate void PausedChangedEventHandler(bool paused);
+    [Signal] public delegate void WorldResetEventHandler();
 
     public override void _Ready()
     {
@@ -45,6 +46,13 @@ public partial class SimManager : Node
     }
 
     public void TogglePause() => Paused = !_paused;
+
+    public void Reset()
+    {
+        _elapsed = 0f;
+        World    = DemoWorldSeeder.Create();
+        EmitSignal(SignalName.WorldReset);
+    }
 
     // Each call shrinks/grows the tick interval by a fixed step
     public void SpeedUp()   => TickInterval = MathF.Max(0.25f, TickInterval - 0.25f);
