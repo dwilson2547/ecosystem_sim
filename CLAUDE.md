@@ -14,7 +14,7 @@ prototype (`SimConsole`) still works but the real UI is in `godot/`.
 
 - **Language:** C# 12, .NET 8
 - **Engine layer:** `EcosystemSim` — a class library, zero UI dependencies, engine-agnostic
-- **Tests:** xUnit 3, `EcosystemSim.Tests` — 82 tests, run `dotnet test` from `sim/`
+- **Tests:** xUnit 3, `EcosystemSim.Tests` — 83 tests, run `dotnet test` from `sim/`
 - **Console UI:** `SimConsole` — terminal renderer / prototype; run from `sim/`
 - **Game UI:** Godot 4.7 (.NET), lives in `godot/`; references `EcosystemSim` via ProjectReference
 
@@ -56,12 +56,12 @@ sim/
 │   ├── ByproductType.cs    # Enum: Fertilizer
 │   ├── TerrainType.cs      # Enum: Plains/Forest/Swamp/Desert/Highland/River/ShallowOcean/DeepOcean
 │   ├── Season.cs           # Enum: Spring/Summer/Autumn/Winter
-    ├── Weather.cs          # Enum: Normal/Rainy/Drought (world-level regen modifier over seasons)
+│   ├── Weather.cs          # Enum: Normal/Rainy/Drought (world-level regen modifier over seasons)
 │   ├── Disease.cs          # Disease blueprint (spread, mortality, recovery rates)
 │   └── *Command.cs         # IWorldCommand implementations for player interventions
 │
 ├── EcosystemSim.Tests/     # xUnit tests
-│   └── WorldTests.cs       # 82 tests; isolated worlds, no seeder dependency
+│   └── WorldTests.cs       # 83 tests; isolated worlds, no seeder dependency
 │
 ├── SimConsole/             # Terminal prototype
 │   ├── Program.cs          # Input loop + tick scheduling
@@ -78,7 +78,7 @@ sim/
 
 ```bash
 cd sim
-dotnet test                        # run all 82 tests
+dotnet test                        # run all 83 tests
 dotnet run --project SimConsole    # terminal prototype
 dotnet run --project EcoReport -c Release   # headless ecology stability report (balance tuning)
 ```
@@ -202,6 +202,14 @@ the refuge protects *thinned* herds (low count), herd defense protects *massed* 
 together they stop a big herd being ground down into the vulnerable-tail death spiral, giving a
 survival floor without inflating the ceiling. This is why Parasaurolophus (`HerdDefense 0.8`) no
 longer goes extinct under T-Rex pressure: a lone apex can't efficiently crop a large hadrosaur herd.
+Predation is also a **hunt, not a guaranteed drain**: prey set `HuntDifficulty` (0 = easily caught,
+default) and a pack's realized kill is scaled by a stochastic hunt-success fraction
+(`World.HuntSuccessFraction`) drawn around catchability `1 - HuntDifficulty`, with spread that shrinks
+as the pack grows — a big pod reliably takes its mean share while a lone apex feasts or goes hungry
+(seeded RNG → reproducible). Tough prey are caught less (armoured Triceratops 0.35 vs agile
+Parasaurolophus 0.25); predator `PreyConsumptionRate`s are bumped to offset the average. Note the demo
+world now runs greener — hunt difficulty + herd defense make abundant herbivores food/space-limited
+rather than predation-limited, with predators cropping the margin.
 Prey deaths accumulate fractionally via
 `PredationAccumulator` (whole individuals only when it crosses 1) rather than `ceil`-ing every hunt.
 Prey also **scatter**: a herd ≥ `ScatterMinHerd` (12) that a predator invades splits a third off to

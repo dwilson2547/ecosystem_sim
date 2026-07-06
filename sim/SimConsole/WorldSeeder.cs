@@ -21,6 +21,7 @@ public static class WorldSeeder
             // low-slung grazer: grazes easily, browses adequately, can't reach canopy fruit
             EaseOfEating = { [FoodSubtype.Graze] = 5f, [FoodSubtype.Browse] = 3f, [FoodSubtype.Fruit] = 1f },
             AsPreyCategory   = PreyCategory.LargeHerbivore,   // armoured; T-Rex takes it only when hadrosaurs are scarce
+            HuntDifficulty   = 0.35f,    // armoured and horned — harder to bring down than a hadrosaur
             ByproductRates   = { [ByproductType.Fertilizer] = 0.08f },
             ReproductionRate = 0.015f,
             StarvationRate   = 0.015f,
@@ -59,6 +60,7 @@ public static class WorldSeeder
             AsPreyCategory   = PreyCategory.SmallHerbivore,   // the hadrosaur swarm — T-Rex's staple
             HerdDefense      = 0.8f,   // safety in numbers: a massed hadrosaur herd deters the T-Rex,
                                        // so it can't grind a big herd into the vulnerable-tail death spiral
+            HuntDifficulty   = 0.25f,  // an agile hadrosaur — the T-Rex misses about a quarter of hunts
             ByproductRates   = { [ByproductType.Fertilizer] = 0.06f },
             ReproductionRate = 0.014f,   // curbed from 0.02 — unchecked it carpeted the map and razed forests
             StarvationRate   = 0.015f,
@@ -79,7 +81,7 @@ public static class WorldSeeder
             // tile and migrates toward the nearest herd. Parasaurolophus preferred, Triceratops accepted.
             FoodConsumptionRate  = 0f,
             WaterConsumptionRate = 0f,
-            PreyConsumptionRate  = 0.6f,
+            PreyConsumptionRate  = 0.8f,   // raised from 0.6 to offset Parasaurolophus hunt difficulty (catchability 0.75)
             PreferredPrey = [PreyCategory.SmallHerbivore],
             AcceptedPrey  = [PreyCategory.LargeHerbivore],
             ByproductRates   = {},
@@ -103,6 +105,7 @@ public static class WorldSeeder
             // ambush hunter: fish and shrimp in shallow water
             EaseOfEating = { [FoodSubtype.Fish] = 4f, [FoodSubtype.Shrimp] = 3f, [FoodSubtype.Crustacean] = 2f },
             AsPreyCategory   = PreyCategory.SmallMarine,
+            HuntDifficulty   = 0.2f,
             ByproductRates   = {},
             ReproductionRate = 0.015f,
             StarvationRate   = 0.015f,
@@ -126,6 +129,7 @@ public static class WorldSeeder
             // open-water fisher: fast pursuit predator, eats squid in deeper water
             EaseOfEating = { [FoodSubtype.Fish] = 5f, [FoodSubtype.Squid] = 3f },
             AsPreyCategory     = PreyCategory.LargeMarine,
+            HuntDifficulty     = 0.2f,
             ByproductRates     = {},
             ReproductionRate   = 0.010f,
             StarvationRate     = 0.012f,
@@ -147,7 +151,7 @@ public static class WorldSeeder
             FoodConsumptionRate  = 0.5f,
             EaseOfEating = { [FoodSubtype.Fish] = 1f, [FoodSubtype.Squid] = 1f },
             // prey eaten per predator per tick — whole individuals, so a small fraction (~1 kill / 7 ticks)
-            PreyConsumptionRate = 0.15f,
+            PreyConsumptionRate = 0.19f,  // raised from 0.15 to offset Plesiosaur hunt difficulty
             PreferredPrey = [PreyCategory.LargeMarine],
             AcceptedPrey  = [PreyCategory.SmallMarine],
             ByproductRates   = {},
@@ -168,7 +172,7 @@ public static class WorldSeeder
             // singleton apex predator: eats all marine prey; survives on fish/squid/whale between hunts
             FoodConsumptionRate  = 1f,
             EaseOfEating = { [FoodSubtype.Fish] = 2f, [FoodSubtype.Squid] = 2f, [FoodSubtype.Whale] = 3f },
-            PreyConsumptionRate  = 3f,
+            PreyConsumptionRate  = 3.75f,  // raised to offset marine prey hunt difficulty
             PreferredPrey        = [PreyCategory.LargeMarine],
             AcceptedPrey         = [PreyCategory.SmallMarine],
             ByproductRates       = {},
@@ -200,7 +204,7 @@ public static class WorldSeeder
             FoodConsumptionRate  = 1f,
             WaterConsumptionRate = 0f,
             EaseOfEating = { [FoodSubtype.Shrimp] = 4f, [FoodSubtype.Fish] = 3f, [FoodSubtype.Crustacean] = 2f },
-            PreyConsumptionRate = 0.3f,
+            PreyConsumptionRate = 0.38f,  // raised from 0.30 to offset Mosasaurus hunt difficulty
             PreferredPrey = [PreyCategory.SmallMarine],
             ByproductRates   = {},
             ReproductionRate = 0.008f,

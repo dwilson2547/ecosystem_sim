@@ -46,6 +46,13 @@ public class SpeciesDefinition
     // without inflating the ceiling — a thinned herd loses the bonus and is hunted normally.
     public float HerdDefense { get; init; }
 
+    // hunt difficulty: how hard an individual is to catch (0 = easily caught, the default; higher =
+    // more escapes/armour). Predation is modeled as a hunt with success probability = catchability
+    // (1 - HuntDifficulty): each tick the fraction of a predator pack that connects is drawn around
+    // that mean, with variance that shrinks with pack size — so a big pack averages out while a lone
+    // apex feasts or goes hungry. A tough prey (e.g. armoured Triceratops) is caught less often.
+    public float HuntDifficulty { get; init; }
+
     // prey categories this carnivore hunts at full satisfaction
     public HashSet<PreyCategory> PreferredPrey { get; init; } = [];
 

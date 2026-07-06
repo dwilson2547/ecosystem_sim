@@ -1655,6 +1655,34 @@ public class WorldTests
     }
 
     [Fact]
+    public void HuntPrey_UncatchablePreyIsNeverKilledButEasyPreyIs()
+    {
+        int LossFor(float huntDifficulty)
+        {
+            var world = new World();
+            var tile  = world.State.Map.GetTile(0, 0);
+            var predator = PredatorSpecies("Rex", rate: 3f, preferred: PreyCategory.SmallHerbivore);
+            var prey = new SpeciesDefinition
+            {
+                Name = "Herd", AsPreyCategory = PreyCategory.SmallHerbivore,
+                HuntDifficulty = huntDifficulty, ReproductionRate = 0f, StarvationRate = 0f,
+            };
+            var preyPop = new Population { Species = prey, Count = 400 };
+            tile.Populations.AddRange([new Population { Species = predator, Count = 30 }, preyPop]);
+            world.Tick();
+            // count prey across the whole map — a scared herd scatters to neighbours, which isn't a kill
+            var total = world.State.Map.AllTiles()
+                .SelectMany(t => t.Populations)
+                .Where(p => p.Species.Name == "Herd")
+                .Sum(p => p.Count);
+            return 400 - total;
+        }
+
+        Assert.Equal(0, LossFor(1f));    // catchability 0 → the pack never connects
+        Assert.True(LossFor(0f) > 0);    // easy prey → hunted normally
+    }
+
+    [Fact]
     public void HuntPrey_CarnivoreWithNoPreyStarves()
     {
         var world    = new World();

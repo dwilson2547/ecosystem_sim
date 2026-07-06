@@ -281,7 +281,28 @@ public class World
 
     // two-pass hunt mirroring the food distribution model: preferred prey first (full satisfaction),
     // then accepted prey for still-hungry hunters (2/3 satisfaction).
-    private static void HuntPrey(Tile tile, bool migrantsOnly = false)
+    // Fraction of a predator pack that lands a kill this tick against `prey`: mean catchability
+    // (1 - HuntDifficulty), with binomial-style spread that shrinks as the pack grows (a lone hunter
+    // swings between a clean kill and a miss; a big pack reliably takes about its mean share). Difficulty
+    // 0 → 1 exactly (deterministic, so easy prey are unchanged); difficulty 1 → 0 (never caught).
+    private float HuntSuccessFraction(SpeciesDefinition prey, int packSize)
+    {
+        var catchability = 1f - prey.HuntDifficulty;
+        if (catchability >= 1f) return 1f;
+        if (catchability <= 0f) return 0f;
+        var stdDev = MathF.Sqrt(catchability * (1f - catchability) / Math.Max(1, packSize));
+        return Math.Clamp(catchability + stdDev * (float)NextGaussian(), 0f, 1f);
+    }
+
+    // standard normal via Box–Muller, drawn from the (seeded) world RNG
+    private double NextGaussian()
+    {
+        var u1 = 1.0 - _random.NextDouble();
+        var u2 = 1.0 - _random.NextDouble();
+        return Math.Sqrt(-2.0 * Math.Log(u1)) * Math.Cos(2.0 * Math.PI * u2);
+    }
+
+    private void HuntPrey(Tile tile, bool migrantsOnly = false)
     {
         var hunters = tile.Populations
             .Where(p => p.Count > 0 && p.Species.IsPredator && (!migrantsOnly || p.JustMigrated))
@@ -342,7 +363,7 @@ public class World
             {
                 var d = RemainingDemand(hunter);
                 if (d <= 0) continue;
-                var taken = d * ratio * takeMult;
+                var taken = d * ratio * takeMult * HuntSuccessFraction(preyPop.Species, hunter.Count);
                 preyConsumed[preyPop] += taken;
                 received[hunter]      += taken;
             }
@@ -369,7 +390,7 @@ public class World
             {
                 var d = RemainingDemand(hunter);
                 if (d <= 0) continue;
-                var taken = d * ratio * takeMult;
+                var taken = d * ratio * takeMult * HuntSuccessFraction(preyPop.Species, hunter.Count);
                 preyConsumed[preyPop] += taken;
                 received[hunter]      += taken * AcceptedPreyValue;
             }
@@ -1223,6 +1244,7 @@ public class World
             EaseOfEating         = new Dictionary<FoodSubtype, float>(parent.EaseOfEating),
             AsPreyCategory       = parent.AsPreyCategory,
             HerdDefense          = parent.HerdDefense,
+            HuntDifficulty       = parent.HuntDifficulty,
             PreferredPrey        = parent.PreferredPrey,
             AcceptedPrey         = parent.AcceptedPrey,
             ByproductRates       = parent.ByproductRates.ToDictionary(kv => kv.Key, kv => kv.Value * sizeIndex),
