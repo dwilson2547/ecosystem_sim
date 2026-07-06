@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>EcoReport</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EcosystemSim\EcosystemSim.csproj" />
+    <!-- Share the one canonical console demo world instead of forking a second copy. -->
+    <Compile Include="..\SimConsole\WorldSeeder.cs" />
+  </ItemGroup>
+
+</Project>

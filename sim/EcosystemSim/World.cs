@@ -4,8 +4,19 @@ public class World
 {
     public WorldState State { get; } = new();
 
-    public World() { }
-    public World(int width, int height) { State = new WorldState { Map = new WorldMap(width, height) }; }
+    // Pass a seed to make a run reproducible (same seed → identical tick-by-tick evolution), which is
+    // what lets balance tuning hold the RNG fixed while changing one parameter. Omit it (null) for the
+    // old behaviour: a fresh time-based Random, so every run diverges. Note the *demo world* also seeds
+    // resource pools in its seeder — pass the same seed there too for a fully reproducible world.
+    public World() : this((int?)null) { }
+    public World(int? seed) { _random = NewRandom(seed); }
+    public World(int width, int height, int? seed = null)
+    {
+        State   = new WorldState { Map = new WorldMap(width, height) };
+        _random = NewRandom(seed);
+    }
+
+    private static Random NewRandom(int? seed) => seed is { } s ? new Random(s) : new Random();
 
     public void Tick()
     {
@@ -106,7 +117,7 @@ public class World
     private const float DegradationThresholdRatio = 0.06f;
     private const float DegradationPressureTarget = 90f;
 
-    private readonly Random _random = new();
+    private readonly Random _random;
 
     private void ApplyTerrainDegradation(Tile tile)
     {

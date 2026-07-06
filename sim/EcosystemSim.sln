@@ -9,6 +9,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EcosystemSim.Tests", "Ecosy
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SimConsole", "SimConsole\SimConsole.csproj", "{ED7D34FD-E7DC-405F-BB27-450ED2F464FB}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EcoReport", "EcoReport\EcoReport.csproj", "{CF130DD7-F995-4F8D-87A7-874745CC2B84}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -27,5 +29,9 @@ Global
 		{ED7D34FD-E7DC-405F-BB27-450ED2F464FB}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{ED7D34FD-E7DC-405F-BB27-450ED2F464FB}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{ED7D34FD-E7DC-405F-BB27-450ED2F464FB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{CF130DD7-F995-4F8D-87A7-874745CC2B84}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{CF130DD7-F995-4F8D-87A7-874745CC2B84}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{CF130DD7-F995-4F8D-87A7-874745CC2B84}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{CF130DD7-F995-4F8D-87A7-874745CC2B84}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

@@ -1753,4 +1753,46 @@ public class WorldTests
         Assert.Contains(steppingStones,
             t => t.Populations.Any(p => p.Species.Name == "ViewPrey" && p.Count > 0));
     }
+
+    // ── deterministic seeding ────────────────────────────────────────────────
+    // World._random feeds only the terrain-degradation pool rebuild, so we drive that path: a Forest
+    // tile whose Fruit pool sits at 0 accrues degradation pressure for exactly 90 ticks, then turns to
+    // Plains and re-rolls its resource pools off _random. Same seed → identical roll; different seed →
+    // different roll. This is the guarantee EcoReport --seed relies on for reproducible balance runs.
+
+    private static World DegradedForestWorld(int? seed)
+    {
+        var world = new World(1, 1, seed);
+        var tile  = world.State.Map.GetTile(0, 0);
+        tile.Terrain = TerrainType.Forest;
+        tile.Resources.Clear();
+        tile.Resources.Add(new ResourcePool
+        {
+            Type = ResourceType.Food, FoodSubtype = FoodSubtype.Fruit,
+            Amount = 0f, Capacity = 100f, RegenPerTick = 0f,
+        });
+        for (var i = 0; i < 90; i++) world.Tick();   // 90 = DegradationPressureTarget → degrades on the last tick
+        return tile.Terrain == TerrainType.Plains
+            ? world
+            : throw new Xunit.Sdk.XunitException($"degradation never fired (terrain still {tile.Terrain})");
+    }
+
+    private static string PoolSignature(Tile t) =>
+        string.Join("|", t.Resources.Select(r => $"{r.Type}:{r.FoodSubtype}:{r.Amount:R}:{r.Capacity:R}"));
+
+    [Fact]
+    public void SameSeed_ReproducesTerrainDegradationExactly()
+    {
+        var a = DegradedForestWorld(42);
+        var b = DegradedForestWorld(42);
+        Assert.Equal(PoolSignature(a.State.Map.GetTile(0, 0)), PoolSignature(b.State.Map.GetTile(0, 0)));
+    }
+
+    [Fact]
+    public void DifferentSeed_ProducesDifferentResourceRoll()
+    {
+        var a = DegradedForestWorld(42);
+        var c = DegradedForestWorld(43);
+        Assert.NotEqual(PoolSignature(a.State.Map.GetTile(0, 0)), PoolSignature(c.State.Map.GetTile(0, 0)));
+    }
 }

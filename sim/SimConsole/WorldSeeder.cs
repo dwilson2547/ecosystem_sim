@@ -4,7 +4,10 @@ namespace SimConsole;
 
 public static class WorldSeeder
 {
-    public static World CreateDemo()
+    // Pass a seed to get a fully reproducible demo world — it feeds both the tick RNG (via World) and
+    // the resource-pool RNG below, so the same seed yields the same world every time. Omit for a fresh
+    // random world (the interactive/default behaviour).
+    public static World CreateDemo(int? seed = null)
     {
         // ── land species ──────────────────────────────────────────────────────
 
@@ -215,7 +218,7 @@ public static class WorldSeeder
             ['B'] = TerrainType.DeepOcean,
         };
 
-        var rng = new Random();
+        var rng = seed is { } s ? new Random(s) : new Random();
 
         for (var y = 0; y < map.Height; y++)
         for (var x = 0; x < map.Width;  x++)
