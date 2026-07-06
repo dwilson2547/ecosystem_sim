@@ -159,34 +159,49 @@ have similar value, prefer the one with lower entry cost.
 DegradesTo)` — currently only `Forest → (FoodSubtype.Fruit, Plains)`. Each tick,
 `ApplyTerrainDegradation` checks the trigger pool's `Amount / Capacity`:
 ```
-if ratio < 0.10: tile.DegradationPressure++
+if ratio < 0.06: tile.DegradationPressure++
 else:            tile.DegradationPressure = max(0, pressure - 1)
-if pressure >= 60: tile.Terrain = Plains; rebuild pools; pressure = 0
+if pressure >= 90: tile.Terrain = Plains; rebuild pools; pressure = 0
 ```
-Fruit (canopy-equivalent food) sustained below 10% capacity for ~60 ticks converts the Forest to
+Fruit (canopy-equivalent food) sustained below 6% capacity for ~90 ticks converts the Forest to
 Plains permanently. The tile's composition is rebuilt fresh from the Plains distribution — the old
 Forest pool set is discarded. Same pressure-accumulator shape as `WaterExposure`/`SizePressure`:
 sustained denudation, not a single bad tick, triggers conversion.
 
-**Demo world terrain map** (`WorldSeeder`, 16×10):
+These thresholds were relaxed from the original 10%/60 ticks. With predation alone (Tyrannosaurus +
+Para curb) the land ecosystem is **bistable**: strong predation saves the forest but exterminates the
+herbivore food chain, while weak predation lets Parasaurolophus reboom and raze the forest — the
+sensitive trigger made "healthy forest *and* a living food chain" nearly unreachable. Letting the
+forest tolerate moderate browsing (6%/90) is the piece that makes stable coexistence achievable;
+across random seeds it lifted forest survival to ~92% and full coexistence to ~71%. If you re-tune
+predation, keep this browsing tolerance in mind — tightening it back reintroduces the bistability.
+
+**Demo world terrain map** (`WorldSeeder`, 16×16):
 ```
      x:  0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15
-y=0:     H  H  H  P  P  P  D  D  D  D  A  A  B  B  B  B
-y=1:     H  H  P  P  P  D  D  D  D  D  A  A  B  B  B  B  ← Highland Tric at (1,1)
-y=2:     H  F  F  F  P  P  P  D  D  D  A  A  B  B  B  B  ← Valley   Tric at (3,2)
-y=3:     P  F  R  R  R  P  P  P  D  D  A  A  B  B  B  B  ← Mosasaurus at (10,3)
-y=4:     P  F  R  R  R  R  P  P  P  D  A  A  B  B  B  B  ← River Alamo at (5,4)
-y=5:     P  P  R  R  R  R  R  P  P  P  A  A  B  B  B  B  ← Kronosaurus at (13,5)
-y=6:     P  S  S  R  R  R  P  P  F  P  A  A  B  B  B  B  ← Midland Para at (7,6); Plesiosaur at (11,6)
-y=7:     P  S  S  S  P  P  P  F  F  P  A  A  B  B  B  B
-y=8:     D  S  P  P  P  P  F  F  F  D  A  A  B  B  B  B  ← Eastern Para at (8,8)
-y=9:     D  D  D  P  P  P  P  P  D  D  A  A  B  B  B  B
+y=0:     H  H  F  F  F  F  F  P  D  D  A  A  B  B  B  B  ← northern forest ─┐
+y=1:     H  H  F  F  F  F  F  P  D  D  A  A  B  B  B  B  ← Highland Tric at (1,1)
+y=2:     H  P  F  F  F  F  F  P  D  D  A  A  B  B  B  B  ← Forest Alamo at (4,2)
+y=3:     P  P  F  F  F  F  P  P  D  D  A  A  B  B  B  B  ← Valley Tric at (7,3); Mosasaurus at (10,3)
+y=4:     P  P  P  F  F  R  P  P  P  D  A  A  B  B  B  B  ← northern forest ─┘  Megalodon at (14,4)
+y=5:     P  P  P  R  R  R  P  P  P  D  A  A  B  B  B  B  ← Kronosaurus at (13,5)
+y=6:     P  S  S  R  R  R  P  P  P  P  A  A  B  B  B  B  ← Midland Para at (7,6); Plesiosaur at (12,6)
+y=7:     P  S  S  S  R  P  P  P  P  P  A  A  B  B  B  B
+y=8:     D  S  S  P  P  P  P  F  F  P  A  A  B  B  B  B  ← Tyrant Pack at (6,8)
+y=9:     D  D  P  P  P  P  F  F  F  D  A  A  B  B  B  B  ← Eastern Para at (7,9)
+y=10:    D  D  P  P  P  P  F  F  P  D  A  A  B  B  B  B  ← southern forest
+y=11:    P  P  P  P  P  P  P  P  P  P  A  A  B  B  B  B
+y=12:    P  P  S  S  P  P  P  P  P  P  A  A  B  B  B  B
+y=13:    P  P  S  S  P  P  P  P  P  P  A  A  B  B  B  B
+y=14:    D  P  P  P  P  P  P  P  P  D  A  A  B  B  B  B
+y=15:    D  D  P  P  P  P  P  P  D  D  A  A  B  B  B  B
 H=Highland  F=Forest  R=River  S=Swamp  D=Desert  P=Plains
 A=ShallowOcean  B=DeepOcean
 ```
 
-Triceratops start in Highland with no water — they need to migrate south to the River/Swamp band.
-Marine species occupy the right 6 columns and cannot migrate onto land.
+The large northern forest (x=2-6, y=0-4) gives the Alamosaurus herd room to disperse. The Tyrant
+Pack seeds in the central plains amid the herbivore range. Marine species occupy the right 6 columns
+and cannot migrate onto land.
 
 **Water exposure.** River is the one terrain that counts as *being in the water*, not just having
 water nearby (Swamp has a water pool but is still walkable land). No species can live there
@@ -327,10 +342,15 @@ Process for the resource-scarcity path (in `Migrate()`):
    evolved traits weighted by count
 
 `BestNeighborByValue` (parameterized on a `Tile -> float` value function):
-- **Primary**: immediate neighbor with strictly more value, prefer lower migration cost as
-  tiebreaker; biome barrier enforced
-- **BFS fallback**: when no immediate neighbor has more (e.g. population in a resource desert),
-  BFS up to 6 tiles deep, returns the *first step* toward the nearest tile with more
+- **In-view pick**: one BFS gathers every tile within `species.ViewRadius` (clamped to [1, 6])
+  along with the first step toward it, then commits toward the tile with strictly more value than
+  current — the *richest* one, prefer lower migration cost then nearer as tiebreak; biome barrier
+  enforced. At `ViewRadius == 1` this is exactly the old immediate-neighbour pick; at ≥2 the
+  species can skip a merely-adequate adjacent tile for a far richer patch two/three layers out
+  (avoids a local optimum). Set per species — Alamosaurus 3; Triceratops, Megalodon, Plesiosaur,
+  Kronosaurus 2; everyone else 1.
+- **BFS fallback**: when nothing within view has more (e.g. population in a resource desert), the
+  same BFS continues to 6 tiles deep and returns the *first step* toward the nearest tile with more
 
 `SustainableFoodCount`/`SustainableWaterCount`/`SustainablePreyCount` decide how many individuals
 a tile can sustain (only the excess migrates) — Food sums ease-weighted regen across all food
@@ -516,9 +536,10 @@ Adding a new intervention = add a class implementing `IWorldCommand`, no changes
 
 | Species | Food | Water | Repro | Starv | Aggression | Combat | Immunity | Ease (G/B/C) | Notes |
 |---------|------|-------|-------|-------|------------|--------|---------|--------------|-------|
-| Triceratops | 2/ind | 0.5/ind | 5% | 5% | 0.3 | 1.4 | 0.30 | 5/3/1 | water-dependent, strong, grazer |
-| Alamosaurus | 5/ind | 1/ind | 3% | 3% | 0.1 | 0.6 | 0.15 | 0/2/5 | keystone fertilizer, very vulnerable to disease, treetop browser |
-| Parasaurolophus | 1/ind | — | 8% | 6% | 0.5 | 0.9 | 0.55 | 3/5/2 | food only, aggressive, disease-resistant, mid-height browser |
+| Triceratops | 2/ind | 0.5/ind | 1.5% | 1.5% | 0.3 | 1.4 | 0.30 | 5/3/1 | grazer; prey=LargeHerbivore (T-Rex accepts) |
+| Alamosaurus | 5/ind | 1/ind | 0.8% | 0.8% | 0.1 | 0.6 | 0.15 | 0/2/5 | keystone fertilizer, very vulnerable to disease, treetop browser |
+| Parasaurolophus | 1/ind | — | 1.4% | 1.5% | 0.5 | 0.9 | 0.55 | 3/5/2 | mid-height browser; repro curbed + MaxCount 45; prey=SmallHerbivore (T-Rex preferred) |
+| Tyrannosaurus | prey-only | — | 1.5% | 1.2% | 0.4 | 4.0 | 0.40 | — | land apex; obligate carnivore, hunts Para (preferred) + Trike (accepted), ViewRadius 2 |
 
 Ease-of-eating (0-5 scale, from the readme's table) governs how readily each species draws from
 Ground/Brush/Canopy — see `docs/food-types.md`.

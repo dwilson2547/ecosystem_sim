@@ -199,6 +199,55 @@ public class WorldTests
         Assert.Empty(startTile.Populations.Where(p => p.Count > 0));
     }
 
+    // ViewRadius: a wider view lets a species skip a merely-adequate adjacent tile in favour of a
+    // far richer patch two layers out. Same geometry, only ViewRadius differs, divergent destinations.
+    private static SpeciesDefinition ViewSeeker(int viewRadius) => new()
+    {
+        Name = "ViewSeeker",
+        FoodConsumptionRate = 1f,
+        ReproductionRate = 0f,
+        StarvationRate = 0.01f,   // low enough that the herd survives the starving tick before it moves
+        MigrationThreshold = 0.9f,
+        ViewRadius = viewRadius,
+    };
+
+    private static World SeedViewScenario(int viewRadius)
+    {
+        var world = new World();
+        // start at (5,2) — food-empty, so it migrates toward whichever food tile it can see
+        var start = world.State.Map.GetTile(5, 2);
+        start.Resources.Add(EmptyFood());
+        start.Populations.Add(new Population { Species = ViewSeeker(viewRadius), Count = 10 });
+
+        // (6,2) is an immediate neighbour with modest food — the best a 1-layer view can find
+        world.State.Map.GetTile(6, 2).Resources.Add(AbundantFood(200f));
+        // (5,4) is two layers out (via (4,3)/(5,3)), far richer — only a ≥2 view can weigh it
+        world.State.Map.GetTile(5, 4).Resources.Add(AbundantFood(10_000f));
+
+        world.Tick();
+        return world;
+    }
+
+    [Fact]
+    public void Tick_NarrowViewTakesBestAdjacentTile()
+    {
+        var world = SeedViewScenario(viewRadius: 1);
+
+        Assert.Contains(world.State.Map.GetTile(6, 2).Populations, p => p.Count > 0);
+    }
+
+    [Fact]
+    public void Tick_WideViewHeadsTowardRicherDistantTile()
+    {
+        var world = SeedViewScenario(viewRadius: 2);
+
+        // it must NOT settle for the modest adjacent tile...
+        Assert.DoesNotContain(world.State.Map.GetTile(6, 2).Populations, p => p.Count > 0);
+        // ...it steps toward the distant rich patch instead (first step is (4,3) or (5,3))
+        var steppingStones = new[] { world.State.Map.GetTile(4, 3), world.State.Map.GetTile(5, 3) };
+        Assert.Contains(steppingStones, t => t.Populations.Any(p => p.Count > 0));
+    }
+
     [Fact]
     public void Tick_PopulationMigratesWhenResourceMissing()
     {
@@ -1375,7 +1424,7 @@ public class WorldTests
         };
         tile.Populations.Add(new Population { Species = species, Count = 20 });
 
-        for (var i = 0; i < 61; i++)
+        for (var i = 0; i < 91; i++) // DegradationPressureTarget = 90 sustained ticks
             world.Tick();
 
         Assert.Equal(TerrainType.Plains, tile.Terrain);
@@ -1521,6 +1570,35 @@ public class WorldTests
     }
 
     [Fact]
+    public void HuntPrey_LandApexThinsPreferredHadrosaurBeforeAcceptedTriceratops()
+    {
+        // Demo land guild: Tyrannosaurus prefers Parasaurolophus (SmallHerbivore) and only
+        // accepts Triceratops (LargeHerbivore). With both herds present and abundant, the
+        // apex should draw its whole demand from the preferred hadrosaurs and barely touch
+        // the armoured Triceratops.
+        var world = new World();
+        var tile  = world.State.Map.GetTile(0, 0);
+        var tyrannosaurus = PredatorSpecies("Tyrannosaurus", rate: 0.6f,
+                                            preferred: PreyCategory.SmallHerbivore,
+                                            accepted:  PreyCategory.LargeHerbivore);
+        var hadrosaur   = PreySpecies("Parasaurolophus", PreyCategory.SmallHerbivore);
+        var triceratops = PreySpecies("Triceratops",     PreyCategory.LargeHerbivore);
+
+        var apexPop     = new Population { Species = tyrannosaurus, Count = 20 };
+        var hadrosaurPop   = new Population { Species = hadrosaur,   Count = 500 };
+        var triceratopsPop = new Population { Species = triceratops, Count = 500 };
+        tile.Populations.AddRange([apexPop, hadrosaurPop, triceratopsPop]);
+
+        world.Tick();
+
+        var hadrosaurLoss   = 500 - hadrosaurPop.Count;
+        var triceratopsLoss = 500 - triceratopsPop.Count;
+        Assert.True(hadrosaurLoss > triceratopsLoss,
+            "preferred hadrosaurs should be thinned before the accepted Triceratops");
+        Assert.Equal(1f, apexPop.LastSatisfaction, 3); // preferred prey abundant → fully fed
+    }
+
+    [Fact]
     public void HuntPrey_CarnivoreWithNoPreyStarves()
     {
         var world    = new World();
@@ -1624,5 +1702,55 @@ public class WorldTests
         Assert.True(scattered > 0, "prey should split off a fleeing group to a neighbouring tile");
         var stayed = tile.Populations.Where(p => p.Species == prey).Sum(p => p.Count);
         Assert.True(stayed > 0, "stragglers should remain behind for the predator, not the whole herd fleeing");
+    }
+
+    // ViewRadius applied to scatter: a wide-view herd fleeing a predator steps toward the safest,
+    // richest patch it can see rather than settling for the best immediate tile. Same geometry as
+    // the resource-view tests; only the prey's ViewRadius differs, and the fleeing group diverges.
+    private static World SeedScatterViewScenario(int viewRadius)
+    {
+        var world = new World();
+        var start = world.State.Map.GetTile(5, 2);
+
+        var prey = new SpeciesDefinition
+        {
+            Name = "ViewPrey",
+            AsPreyCategory = PreyCategory.SmallHerbivore,
+            ReproductionRate = 0f,
+            StarvationRate = 0f,
+            ViewRadius = viewRadius,
+        };
+        // low rate so hunting barely dents the herd — we're isolating the scatter direction
+        start.Populations.Add(new Population { Species = PredatorSpecies("Predator", 0.01f, PreyCategory.SmallHerbivore), Count = 3 });
+        start.Populations.Add(new Population { Species = prey, Count = 20 });
+
+        // both neighbourhoods are predator-free; they differ only in food, which is the scatter
+        // tiebreak. (6,2) is adjacent and modest; (5,4) is two layers out and far richer.
+        world.State.Map.GetTile(6, 2).Resources.Add(AbundantFood(200f));
+        world.State.Map.GetTile(5, 4).Resources.Add(AbundantFood(10_000f));
+
+        world.Tick();
+        return world;
+    }
+
+    [Fact]
+    public void Migrate_NarrowViewPreyScattersToBestAdjacentTile()
+    {
+        var world = SeedScatterViewScenario(viewRadius: 1);
+
+        Assert.Contains(world.State.Map.GetTile(6, 2).Populations,
+            p => p.Species.Name == "ViewPrey" && p.Count > 0);
+    }
+
+    [Fact]
+    public void Migrate_WideViewPreyScattersTowardSaferRicherPatch()
+    {
+        var world = SeedScatterViewScenario(viewRadius: 2);
+
+        Assert.DoesNotContain(world.State.Map.GetTile(6, 2).Populations,
+            p => p.Species.Name == "ViewPrey" && p.Count > 0);
+        var steppingStones = new[] { world.State.Map.GetTile(4, 3), world.State.Map.GetTile(5, 3) };
+        Assert.Contains(steppingStones,
+            t => t.Populations.Any(p => p.Species.Name == "ViewPrey" && p.Count > 0));
     }
 }

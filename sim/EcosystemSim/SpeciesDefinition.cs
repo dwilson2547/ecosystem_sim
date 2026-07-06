@@ -61,6 +61,12 @@ public class SpeciesDefinition
     // ticks a population must wait before migrating again after it last moved (0 = no cooldown)
     public int MigrationCooldownTicks { get; init; }
 
+    // how many tile layers out this species can "see" when choosing a resource/prey migration target.
+    // 1 = only immediate neighbours (default). Higher lets it evaluate tiles further out and head
+    // toward the richest patch in view instead of greedily hopping to the best adjacent tile (a local
+    // optimum). Clamped to the migration search depth. See World.BestNeighborByValue.
+    public int ViewRadius { get; init; } = 1;
+
     // if non-empty, this species can only migrate to tiles with one of these terrain types
     public HashSet<TerrainType> AllowedTerrains { get; init; } = [];
 

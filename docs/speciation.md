@@ -65,6 +65,7 @@ and after.
 | `Immunity` | `parent.Immunity + ImmunityDelta`, capped at 1.0 |
 | `WarAggression` | unchanged |
 | `MigrationThreshold` | unchanged |
+| `ViewRadius` | unchanged — a lineage keeps its map-awareness |
 | `RootName` | inherited from parent (lineage anchor) |
 
 After speciation, the population's accumulated evolution state is reset:

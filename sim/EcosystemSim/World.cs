@@ -103,8 +103,8 @@ public class World
 
     // ── terrain degradation ───────────────────────────────────────────────────
 
-    private const float DegradationThresholdRatio = 0.10f;
-    private const float DegradationPressureTarget = 60f;
+    private const float DegradationThresholdRatio = 0.06f;
+    private const float DegradationPressureTarget = 90f;
 
     private readonly Random _random = new();
 
@@ -623,17 +623,29 @@ public class World
             .Sum(p => p.Count);
     }
 
-    // flee to the same-biome, terrain-allowed neighbour with the least predator pressure,
-    // breaking ties by food value; avoid River so prey don't bolt straight into drowning
-    private Tile? BestNeighborAwayFromPredators(Tile current, SpeciesDefinition species) =>
-        State.Map.GetNeighbors(current)
-            .Where(n => n.Terrain != TerrainType.River
-                     && TerrainStats.IsOcean(n.Terrain) == TerrainStats.IsOcean(current.Terrain)
-                     && IsTerrainAllowed(n, species))
-            .OrderBy(n => PredatorPressureOn(n, species))
-            .ThenByDescending(n => EffectiveFoodValue(n, species))
-            .ThenBy(n => TerrainStats.MigrationCostOf(n.Terrain))
+    // flee toward the safest same-biome, non-River patch within ViewRadius, returning the first step
+    // toward it so the herd still moves only one tile even when the safe ground is several layers out.
+    // Never step into a predator (firstStep pressure is the primary key), then head toward the tile
+    // with the least predator pressure, breaking ties by food value, proximity, then terrain cost.
+    // Avoid River so prey don't bolt straight into drowning. A wider view lets a skittish herbivore
+    // route around a predator toward genuinely safe ground instead of only weighing the six adjacent
+    // tiles. At ViewRadius 1 firstStep == the tile, so this reduces to the old immediate-neighbour pick.
+    private Tile? BestNeighborAwayFromPredators(Tile current, SpeciesDefinition species)
+    {
+        bool Passable(Tile n) =>
+            n.Terrain != TerrainType.River
+            && TerrainStats.IsOcean(n.Terrain) == TerrainStats.IsOcean(current.Terrain)
+            && IsTerrainAllowed(n, species);
+
+        var best = TilesInView(current, Math.Clamp(species.ViewRadius, 1, 6), Passable)
+            .OrderBy(c => PredatorPressureOn(c.firstStep, species))
+            .ThenBy(c => PredatorPressureOn(c.tile, species))
+            .ThenByDescending(c => EffectiveFoodValue(c.tile, species))
+            .ThenBy(c => c.depth)
+            .ThenBy(c => TerrainStats.MigrationCostOf(c.firstStep.Terrain))
             .FirstOrDefault();
+        return best.firstStep;
+    }
 
     // flee to the best non-River, same-biome neighbor
     private Tile? BestNeighborAwayFromWater(Tile current, SpeciesDefinition species) =>
@@ -660,42 +672,59 @@ public class World
     private Tile? BestNeighborByValue(Tile current, Func<Tile, float> valueOf, SpeciesDefinition species)
     {
         const int MaxSearchDepth = 6;
-
+        var viewRadius = Math.Clamp(species.ViewRadius, 1, MaxSearchDepth);
         var currentValue = valueOf(current);
-        var neighbors    = State.Map.GetNeighbors(current)
-            .Where(n => TerrainStats.IsOcean(n.Terrain) == TerrainStats.IsOcean(current.Terrain)
-                     && IsTerrainAllowed(n, species))
-            .ToList();
 
-        var immediate = neighbors
-            .Where(n => valueOf(n) > currentValue)
-            .OrderByDescending(valueOf)
-            .ThenBy(n => TerrainStats.MigrationCostOf(n.Terrain))
+        bool Passable(Tile n) =>
+            TerrainStats.IsOcean(n.Terrain) == TerrainStats.IsOcean(current.Terrain)
+            && IsTerrainAllowed(n, species);
+
+        var reachable = TilesInView(current, MaxSearchDepth, Passable);
+
+        // Within ViewRadius the species sees whole patches and commits toward the richest tile in
+        // view — a wider view is exactly what lets it skip a merely-adequate adjacent tile in favour
+        // of a distant richer one, instead of greedily hopping to the best immediate neighbour (a
+        // local optimum). At ViewRadius 1 this is exactly the old immediate-neighbour pick.
+        var inView = reachable
+            .Where(c => c.depth <= viewRadius && valueOf(c.tile) > currentValue)
+            .OrderByDescending(c => valueOf(c.tile))
+            .ThenBy(c => c.depth)
+            .ThenBy(c => TerrainStats.MigrationCostOf(c.firstStep.Terrain))
             .FirstOrDefault();
+        if (inView.firstStep is not null) return inView.firstStep;
 
-        if (immediate is not null) return immediate;
+        // Nothing better in view — walk toward the nearest better tile to cross a resource desert.
+        var beyond = reachable
+            .Where(c => c.depth > viewRadius && valueOf(c.tile) > currentValue)
+            .OrderBy(c => c.depth)
+            .ThenBy(c => TerrainStats.MigrationCostOf(c.firstStep.Terrain))
+            .FirstOrDefault();
+        return beyond.firstStep;
+    }
 
-        // BFS fallback: find nearest tile with more, return first step toward it
+    // One BFS out to `radius` layers over passable tiles, returning every reachable tile paired with
+    // the first step toward it (an immediate neighbour) and its layer depth. Shared by the view-aware
+    // migration searches so "how far can this species see" lives in one place. BFS order means the
+    // first time a tile is reached is along a shortest passable path, so `firstStep` is stable.
+    private List<(Tile tile, Tile firstStep, int depth)> TilesInView(
+        Tile current, int radius, Func<Tile, bool> passable)
+    {
         var visited = new HashSet<Tile> { current };
-        var queue   = new Queue<(Tile tile, Tile firstStep)>();
-        foreach (var n in neighbors) { queue.Enqueue((n, n)); visited.Add(n); }
+        var queue   = new Queue<(Tile tile, Tile firstStep, int depth)>();
+        var result  = new List<(Tile tile, Tile firstStep, int depth)>();
+
+        foreach (var n in State.Map.GetNeighbors(current).Where(passable))
+            if (visited.Add(n)) queue.Enqueue((n, n, 1));
 
         while (queue.Count > 0)
         {
-            var (tile, firstStep) = queue.Dequeue();
-            if (HexDistance(tile, current) > MaxSearchDepth) continue;
-
-            if (valueOf(tile) > currentValue)
-                return firstStep;
-
-            foreach (var next in State.Map.GetNeighbors(tile)
-                .Where(n => TerrainStats.IsOcean(n.Terrain) == TerrainStats.IsOcean(current.Terrain)
-                         && IsTerrainAllowed(n, species)))
-                if (visited.Add(next))
-                    queue.Enqueue((next, firstStep));
+            var step = queue.Dequeue();
+            result.Add(step);
+            if (step.depth >= radius) continue;
+            foreach (var next in State.Map.GetNeighbors(step.tile).Where(passable))
+                if (visited.Add(next)) queue.Enqueue((next, step.firstStep, step.depth + 1));
         }
-
-        return null;
+        return result;
     }
 
     private static Population ForkFrom(Population source, int count) => new()
@@ -1143,6 +1172,7 @@ public class World
             StarvationRate       = parent.StarvationRate,
             MigrationThreshold      = parent.MigrationThreshold,
             MigrationCooldownTicks  = parent.MigrationCooldownTicks,
+            ViewRadius              = parent.ViewRadius,
             AllowedTerrains         = parent.AllowedTerrains,
             MaxCount                = parent.MaxCount,
             WarAggression        = parent.WarAggression,

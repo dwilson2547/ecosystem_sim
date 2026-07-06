@@ -12,10 +12,12 @@ public static class WorldSeeder
         {
             Name = "Triceratops",
             RootName = "Triceratops",
+            ViewRadius = 2,
             FoodConsumptionRate  = 2f,
             WaterConsumptionRate = 0.5f,
             // low-slung grazer: grazes easily, browses adequately, can't reach canopy fruit
             EaseOfEating = { [FoodSubtype.Graze] = 5f, [FoodSubtype.Browse] = 3f, [FoodSubtype.Fruit] = 1f },
+            AsPreyCategory   = PreyCategory.LargeHerbivore,   // armoured; T-Rex takes it only when hadrosaurs are scarce
             ByproductRates   = { [ByproductType.Fertilizer] = 0.08f },
             ReproductionRate = 0.015f,
             StarvationRate   = 0.015f,
@@ -29,6 +31,7 @@ public static class WorldSeeder
         {
             Name = "Alamosaurus",
             RootName = "Alamosaurus",
+            ViewRadius = 3,
             FoodConsumptionRate  = 5f,
             WaterConsumptionRate = 1f,
             // treetop browser: fruit and upper browse only, can't graze
@@ -50,13 +53,38 @@ public static class WorldSeeder
             WaterConsumptionRate = 0f,
             // mid-height browser: browse specialist, decent grazer, some fruit
             EaseOfEating = { [FoodSubtype.Browse] = 5f, [FoodSubtype.Graze] = 3f, [FoodSubtype.Fruit] = 2f },
+            AsPreyCategory   = PreyCategory.SmallHerbivore,   // the hadrosaur swarm — T-Rex's staple
             ByproductRates   = { [ByproductType.Fertilizer] = 0.06f },
-            ReproductionRate = 0.02f,
+            ReproductionRate = 0.014f,   // curbed from 0.02 — unchecked it carpeted the map and razed forests
             StarvationRate   = 0.015f,
             MigrationThreshold = 0.5f,
+            MaxCount         = 45,       // per-tile density cap; predation does the real population control
             WarAggression    = 0.5f,
             CombatStrength   = 0.9f,
             Immunity         = 0.55f,
+        };
+
+        // land apex predator — checks the herbivores (esp. Parasaurolophus) so forests aren't razed
+        var tyrannosaurus = new SpeciesDefinition
+        {
+            Name = "Tyrannosaurus",
+            RootName = "Tyrannosaurus",
+            ViewRadius = 2,
+            // obligate carnivore: no plant food, lives purely on prey — reads sat 0 on a preyless
+            // tile and migrates toward the nearest herd. Parasaurolophus preferred, Triceratops accepted.
+            FoodConsumptionRate  = 0f,
+            WaterConsumptionRate = 0f,
+            PreyConsumptionRate  = 0.6f,
+            PreferredPrey = [PreyCategory.SmallHerbivore],
+            AcceptedPrey  = [PreyCategory.LargeHerbivore],
+            ByproductRates   = {},
+            ReproductionRate = 0.015f,
+            StarvationRate   = 0.012f,   // persists between hunts rather than crashing when a tile is cleared
+            MigrationThreshold = 0.5f,
+            MigrationCooldownTicks = 2,
+            WarAggression    = 0.4f,
+            CombatStrength   = 4.0f,
+            Immunity         = 0.4f,
         };
 
         // ── marine species ────────────────────────────────────────────────────
@@ -83,6 +111,7 @@ public static class WorldSeeder
         {
             Name = "Plesiosaur",
             RootName = "Plesiosaur",
+            ViewRadius = 2,
             FoodConsumptionRate  = 3f,
             WaterConsumptionRate = 0f,
             // open-water fisher: fast pursuit predator, eats squid in deeper water
@@ -102,6 +131,7 @@ public static class WorldSeeder
         {
             Name = "Kronosaurus",
             RootName = "Kronosaurus",
+            ViewRadius = 2,
             WaterConsumptionRate = 0f,
             // apex pliosaur: plesiosaurs preferred, mosasaurs accepted;
             // subsists on raw fish/squid at low ease (partial satisfaction) when prey is absent
@@ -124,6 +154,7 @@ public static class WorldSeeder
         {
             Name = "Megalodon",
             RootName = "Megalodon",
+            ViewRadius = 2,
             WaterConsumptionRate = 0f,
             // singleton apex predator: eats all marine prey; survives on fish/squid/whale between hunts
             FoodConsumptionRate  = 1f,
@@ -145,24 +176,31 @@ public static class WorldSeeder
 
         // ── world + terrain ───────────────────────────────────────────────────
 
-        var world = new World(16, 10);
+        var world = new World(16, 16);
         var map   = world.State.Map;
 
-        // terrain layout — y=0 (north) to y=9 (south), x=0 (west) to x=15 (east)
+        // terrain layout — y=0 (north) to y=15 (south), x=0 (west) to x=15 (east)
         // H=Highland  F=Forest  R=River  S=Swamp  D=Desert  P=Plains
         // A=ShallowOcean  B=DeepOcean
+        // Large northern forest biome (x=2-6, y=0-4) gives the Alamosaurus herd room to disperse.
         var terrainRows = new[]
         {
-            "HHHPPPDDDDAABBBB", // y=0
-            "HHPPPDDDDDAABBBB", // y=1  Highland Tric at (1,1)
-            "HFFFPPPDDDAABBBB", // y=2  Valley   Tric at (3,2)
-            "PFRRRPPPDDAABBBB", // y=3  Mosasaurus at (10,3)
-            "PFRRRRPPPDAABBBB", // y=4  River Alamo at (5,4)
-            "PPRRRRRPPPAABBBB", // y=5  Kronosaurus at (13,5)
-            "PSSRRRPPFPAABBBB", // y=6  Midland Para at (7,6)  Plesiosaur at (12,6) DeepOcean
-            "PSSSPPPFFPAABBBB", // y=7
-            "DSPPPPFFFDAABBBB", // y=8  Eastern Para at (8,8)
-            "DDDPPPPPDDAABBBB", // y=9
+            "HHFFFFFPDDAABBBB", // y=0   northern forest ─┐
+            "HHFFFFFPDDAABBBB", // y=1   Highland Tric at (1,1)
+            "HPFFFFFPDDAABBBB", // y=2   Forest Alamo at (4,2)
+            "PPFFFFPPDDAABBBB", // y=3   Valley Tric at (7,3); Mosasaurus at (10,3)
+            "PPPFFRPPPDAABBBB", // y=4   northern forest ─┘  Megalodon at (14,4)
+            "PPPRRRPPPDAABBBB", // y=5   Kronosaurus at (13,5)
+            "PSSRRRPPPPAABBBB", // y=6   Midland Para at (7,6); Plesiosaur at (12,6) DeepOcean
+            "PSSSRPPPPPAABBBB", // y=7
+            "DSSPPPPFFPAABBBB", // y=8
+            "DDPPPPFFFDAABBBB", // y=9   Eastern Para at (7,9)
+            "DDPPPPFFPDAABBBB", // y=10  southern forest
+            "PPPPPPPPPPAABBBB", // y=11
+            "PPSSPPPPPPAABBBB", // y=12
+            "PPSSPPPPPPAABBBB", // y=13
+            "DPPPPPPPPDAABBBB", // y=14
+            "DDPPPPPPDDAABBBB", // y=15
         };
 
         var charToTerrain = new Dictionary<char, TerrainType>
@@ -192,16 +230,17 @@ public static class WorldSeeder
 
         var highlandTric   = new Faction { Name = "Highland Tric",    PrimarySpecies = triceratops };
         var valleyTric     = new Faction { Name = "Valley Tric",      PrimarySpecies = triceratops };
-        var riverAlamo     = new Faction { Name = "River Alamo",      PrimarySpecies = alamosaurus };
+        var forestAlamo     = new Faction { Name = "Forest Alamo",      PrimarySpecies = alamosaurus };
         var easternPara    = new Faction { Name = "Eastern Para",     PrimarySpecies = parasaurolophus };
         var midlandPara    = new Faction { Name = "Midland Para",     PrimarySpecies = parasaurolophus };
+        var tyrantPack     = new Faction { Name = "Tyrant Pack",      PrimarySpecies = tyrannosaurus };
         var mosaPack       = new Faction { Name = "Mosasaurus Pack",  PrimarySpecies = mosasaurus };
         var plesioDrift    = new Faction { Name = "Plesiosaur Drift", PrimarySpecies = plesiosaur };
         var kronosPod      = new Faction { Name = "Kronosaurus Pod",  PrimarySpecies = kronosaurus };
         var theMegalodon   = new Faction { Name = "The Megalodon",    PrimarySpecies = megalodon };
 
-        world.State.Factions.AddRange([highlandTric, valleyTric, riverAlamo, easternPara, midlandPara,
-                                       mosaPack, plesioDrift, kronosPod, theMegalodon]);
+        world.State.Factions.AddRange([highlandTric, valleyTric, forestAlamo, easternPara, midlandPara,
+                                       tyrantPack, mosaPack, plesioDrift, kronosPod, theMegalodon]);
 
         void Place(Faction faction, int x, int y, int count)
         {
@@ -212,10 +251,11 @@ public static class WorldSeeder
 
         // land
         Place(highlandTric, 1,  1, 50);
-        Place(valleyTric,   3,  2, 40);
-        Place(riverAlamo,   5,  4, 25);
-        Place(easternPara,  8,  8, 80);
+        Place(valleyTric,   7,  3, 40);
+        Place(forestAlamo,  4,  2, 25);
+        Place(easternPara,  7,  9, 80);
         Place(midlandPara,  7,  6, 60);
+        Place(tyrantPack,   6,  8,  5);   // central plains, amid the herbivore range
 
         // marine: shallow zone (x=10-11) and deep zone (x=12-15)
         Place(mosaPack,    10,  3, 30);

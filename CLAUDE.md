@@ -14,7 +14,7 @@ prototype (`SimConsole`) still works but the real UI is in `godot/`.
 
 - **Language:** C# 12, .NET 8
 - **Engine layer:** `EcosystemSim` — a class library, zero UI dependencies, engine-agnostic
-- **Tests:** xUnit 3, `EcosystemSim.Tests` — 71 tests, run `dotnet test` from `sim/`
+- **Tests:** xUnit 3, `EcosystemSim.Tests` — 78 tests, run `dotnet test` from `sim/`
 - **Console UI:** `SimConsole` — terminal renderer / prototype; run from `sim/`
 - **Game UI:** Godot 4.7 (.NET), lives in `godot/`; references `EcosystemSim` via ProjectReference
 
@@ -60,7 +60,7 @@ sim/
 │   └── *Command.cs         # IWorldCommand implementations for player interventions
 │
 ├── EcosystemSim.Tests/     # xUnit tests
-│   └── WorldTests.cs       # 71 tests; isolated worlds, no seeder dependency
+│   └── WorldTests.cs       # 78 tests; isolated worlds, no seeder dependency
 │
 └── SimConsole/             # Terminal prototype
     ├── Program.cs          # Input loop + tick scheduling
@@ -74,7 +74,7 @@ sim/
 
 ```bash
 cd sim
-dotnet test                        # run all 71 tests
+dotnet test                        # run all 78 tests
 dotnet run --project SimConsole    # terminal prototype
 ```
 
@@ -108,8 +108,8 @@ Water is present on every non-ocean terrain, scaled off River as the "full water
 Desert 0-5%, Highland ~5%, Plains/Forest ~10%, Swamp ~15%, River 100%.
 
 Terrain isn't fully static: **`TerrainStats.Degradation`** maps a terrain to a `(TriggerSubtype,
-DegradesTo)` pair — currently only `Forest → Plains` when `FoodSubtype.Fruit` stays below 10% of
-capacity for 60 sustained ticks (`Tile.DegradationPressure`, `World.ApplyTerrainDegradation`).
+DegradesTo)` pair — currently only `Forest → Plains` when `FoodSubtype.Fruit` stays below 6% of
+capacity for 90 sustained ticks (`Tile.DegradationPressure`, `World.ApplyTerrainDegradation`).
 Sustained heavy browsing by Alamosaurus herds can permanently clear a forest into grassland.
 
 ### 3. Seasons
@@ -152,6 +152,15 @@ Two independent triggers, checked in `Migrate()` in this order:
    the ocean biome barrier. BFS fallback navigates resource deserts up to 6 tiles deep. Merged
    populations blend SizeIndex, ImmunityDelta, WaterExposure weighted by count.
 
+   **View radius** — `SpeciesDefinition.ViewRadius` (default 1) is how many tile layers out a species
+   evaluates when picking a scarcity destination (`BestNeighborByValue`). At 1 it greedily takes the
+   best *immediate* neighbour; at ≥2 it sees whole patches and commits toward the richest tile within
+   view, skipping a merely-adequate adjacent tile for a far richer one two/three layers out (avoids a
+   local optimum). Past ViewRadius it still falls back to the nearest-better BFS out to 6 tiles.
+   Currently: Alamosaurus 3; Triceratops, Megalodon, Plesiosaur, Kronosaurus 2; everyone else 1. Only
+   the resource/prey scarcity search is view-aware — reactive flee-from-water and predator-scatter
+   moves stay immediate-neighbour (nearest-refuge, not best-distant).
+
 ### 7. Density drain
 Every 5 individuals in a population compounds its resource draw exponentially:
 `demand × 1.15^(count / 5)`. A handful of dinosaurs barely dent a tile; a 100-strong herd draws
@@ -176,7 +185,11 @@ Prey also **scatter**: a herd ≥ `ScatterMinHerd` (12) that a predator invades 
 the safest reachable neighbour (`BestNeighborAwayFromPredators`), throttled by migration cooldown,
 so it disperses under pressure even when well-fed while leaving stragglers behind. Prey populations
 set `AsPreyCategory`. Carnivores migrate toward prey via the standard BFS.
-Demo carnivore: **Kronosaurus** at DeepOcean, hunting Plesiosaur (preferred) and Mosasaurus (accepted).
+Demo carnivores: **Kronosaurus** at DeepOcean, hunting Plesiosaur (preferred) and Mosasaurus
+(accepted); **Tyrannosaurus** on land — an obligate-carnivore apex pack that thins Parasaurolophus
+(SmallHerbivore, preferred) and Triceratops (LargeHerbivore, accepted), keeping the hadrosaur swarm
+from razing the forests. Prey categories: Parasaurolophus=SmallHerbivore, Triceratops=LargeHerbivore,
+Mosasaurus=SmallMarine, Plesiosaur=LargeMarine.
 
 ### 10. Disease
 Player triggers disease on a tile. It spreads intra-tile (rate × density bonus) and
@@ -238,7 +251,7 @@ Per tile:
 5. `ApplyWaterExposure` — drowning losses for populations stranded on River terrain
 6. `ProduceByproducts` — count × species rate
 7. `DecayByproducts` — 10%/tick
-8. `ApplyTerrainDegradation` — check FoodSubtype.Fruit ratio; if sustained below 10% for 60 ticks
+8. `ApplyTerrainDegradation` — check FoodSubtype.Fruit ratio; if sustained below 6% for 90 ticks
    convert Forest→Plains and rebuild resource pools
 
 Global:
@@ -310,7 +323,8 @@ what it needs on specific tiles. Key helpers in `WorldTests.cs`:
    deliberately un-tuned: in a sparse-predator sandbox the equilibrium currently favours prey. Tune
    `PreyRefugeHalfSaturation`, `ScatterMinHerd`, Kronosaurus `PreyConsumptionRate`/`ReproductionRate`,
    and per-species `MigrationCooldownTicks` (skittishness) once the roster grows
-3. **Land carnivore** — T-Rex consuming `SmallHerbivore`/`LargeHerbivore`
+3. **More land predators** — the Tyrannosaurus apex is in (§9); a second tier (nimble pack hunter
+   pressuring hadrosaurs/juveniles, or a scavenger niche) would make land predation less monolithic
 4. **Procedural map generation** — rivers, biomes, mountain ranges; replaces the hardcoded
    terrain string in `WorldSeeder`
 5. **Player interventions** — meteor strike, terraforming, population seeding mid-run
