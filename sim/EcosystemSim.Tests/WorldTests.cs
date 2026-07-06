@@ -1683,6 +1683,35 @@ public class WorldTests
     }
 
     [Fact]
+    public void Pollination_LiftsFruitRegen()
+    {
+        float FruitRegenWith(bool pollinator)
+        {
+            var world = new World();
+            var tile  = world.State.Map.GetTile(0, 0);
+            tile.Resources.Clear();
+            var fruit = new ResourcePool
+            {
+                Type = ResourceType.Food, FoodSubtype = FoodSubtype.Fruit,
+                Amount = 0f, Capacity = 10_000f, RegenPerTick = 100f,
+            };
+            tile.Resources.Add(fruit);
+            world.State.CurrentSeason = Season.Summer;   // neutral food multiplier
+            if (pollinator)
+            {
+                // pure pollinator (no food draw) so we measure the regen boost in isolation
+                var bee = new SpeciesDefinition { Name = "Bee", PollinationBoost = 0.7f };
+                tile.Populations.Add(new Population { Species = bee, Count = 100 });
+            }
+            world.Tick();
+            return fruit.Amount;
+        }
+
+        Assert.True(FruitRegenWith(true) > FruitRegenWith(false),
+            "a pollinator on the tile should lift Fruit regen");
+    }
+
+    [Fact]
     public void HuntPrey_InsectivoreThinsInsectSwarm()
     {
         var world = new World();

@@ -148,6 +148,27 @@ public static class DemoWorldSeeder
             Immunity         = 0.25f,
         };
 
+        // pollinator — the mutualist half of the insect guild. Bees sip nectar (feed on Fruit) and in
+        // return lift Fruit regen where they settle, so a pollinated forest yields more fruit — which
+        // feeds the bees AND the fruit-eaters (Alamosaurus, Parasaurolophus). Food-limited on Fruit.
+        var bee = new SpeciesDefinition
+        {
+            Name             = "Bee",
+            RootName         = "Bee",
+            FoodConsumptionRate  = 0.03f,   // sips nectar — a light draw on Fruit
+            WaterConsumptionRate = 0f,
+            EaseOfEating     = { [FoodSubtype.Fruit] = 5f },
+            PollinationBoost = 0.7f,        // up to +70% Fruit regen where a colony works the tile
+            ByproductRates   = {},
+            ReproductionRate = 0.02f,
+            StarvationRate   = 0.04f,
+            MigrationThreshold = 0.5f,
+            MaxCount         = 20,          // per-tile cap — a colony works the tile without stripping it
+            WarAggression    = 0f,
+            CombatStrength   = 0.1f,
+            Immunity         = 0.2f,
+        };
+
         // ── marine species ────────────────────────────────────────────────────
 
         var mosasaurus = new SpeciesDefinition
@@ -339,10 +360,11 @@ public static class DemoWorldSeeder
         var xiphShoal    = new Faction { Name = "Xiphactinus Shoal", PrimarySpecies = xiphactinus };
         var locustSwarm  = new Faction { Name = "Locust Swarm",     PrimarySpecies = locust };
         var dragonflies  = new Faction { Name = "Dragonflies",      PrimarySpecies = meganeura };
+        var beeColony    = new Faction { Name = "Bee Colony",       PrimarySpecies = bee };
 
         world.State.Factions.AddRange([highlandTric, valleyTric, forestAlamo, easternPara, midlandPara,
                                        tyrantPack, mosaPack, plesioDrift, kronosPod, theMegalodon, xiphShoal,
-                                       locustSwarm, dragonflies]);
+                                       locustSwarm, dragonflies, beeColony]);
 
         void Place(Faction faction, int x, int y, int count)
         {
@@ -362,6 +384,7 @@ public static class DemoWorldSeeder
         // insects — southern plains
         Place(locustSwarm,  3, 12, 120);
         Place(dragonflies,  4, 12, 10);
+        Place(beeColony,    4,  2, 15);   // northern forest — nectar among the fruit
 
         // marine
         Place(mosaPack,    10,  3, 30);

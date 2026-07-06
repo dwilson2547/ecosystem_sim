@@ -61,6 +61,13 @@ public class SpeciesDefinition
 
     public bool IsPredator => PreyConsumptionRate > 0;
 
+    // ── symbiosis ──────────────────────────────────────────────────────────
+
+    // pollination (mutualism): where this species is present, Fruit regen on the tile is lifted by up
+    // to this fraction (saturating with the pollinator count). 0 = not a pollinator (default). The bee
+    // feeds on the fruit it helps set, so both sides gain — and fruit-eaters (Alamosaurus) benefit too.
+    public float PollinationBoost { get; init; }
+
     // ── shared traits ────────────────────────────────────────────────────────
 
     // fractional population growth per tick when fully satisfied

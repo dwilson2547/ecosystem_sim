@@ -14,7 +14,7 @@ prototype (`SimConsole`) still works but the real UI is in `godot/`.
 
 - **Language:** C# 12, .NET 8
 - **Engine layer:** `EcosystemSim` — a class library, zero UI dependencies, engine-agnostic
-- **Tests:** xUnit 3, `EcosystemSim.Tests` — 84 tests, run `dotnet test` from `sim/`
+- **Tests:** xUnit 3, `EcosystemSim.Tests` — 85 tests, run `dotnet test` from `sim/`
 - **Console UI:** `SimConsole` — terminal renderer / prototype; run from `sim/`
 - **Game UI:** Godot 4.7 (.NET), lives in `godot/`; references `EcosystemSim` via ProjectReference
 
@@ -61,7 +61,7 @@ sim/
 │   └── *Command.cs         # IWorldCommand implementations for player interventions
 │
 ├── EcosystemSim.Tests/     # xUnit tests
-│   └── WorldTests.cs       # 84 tests; isolated worlds, no seeder dependency
+│   └── WorldTests.cs       # 85 tests; isolated worlds, no seeder dependency
 │
 ├── SimConsole/             # Terminal prototype
 │   ├── Program.cs          # Input loop + tick scheduling
@@ -78,7 +78,7 @@ sim/
 
 ```bash
 cd sim
-dotnet test                        # run all 84 tests
+dotnet test                        # run all 85 tests
 dotnet run --project SimConsole    # terminal prototype
 dotnet run --project EcoReport -c Release   # headless ecology stability report (balance tuning)
 ```
@@ -235,7 +235,18 @@ stripped (boom-bust plagues, oscillating ~40→2000+); and **Meganeura** — a g
 obligate insectivore capped small (`MaxCount`) so it lives off the swarm's margin rather than
 controlling it (locusts are food-limited, not predation-limited). Adding the locust competitor also
 pulled the over-abundant grazers leaner. No dedicated dino insectivore yet — insects are a prey base
-future species (and symbiosis, e.g. pollinators) can build on.
+future species can build on.
+
+### 9b. Symbiosis — pollination (mutualism)
+The first mutualism. A species with **`PollinationBoost`** (0–1) lifts `Fruit` regen on any tile it
+occupies by `PollinationBoost × count/(count + PollinationHalfSaturation)` (saturating with the colony
+size), applied in `RegenerateResources` (`World.PollinationBoostOn`). The demo's **Bee** is the
+pollinator: it sips nectar (a light `Fruit` draw) and pollinates in return, so a bee-worked forest
+regenerates fruit faster — feeding the bees *and* the fruit-eaters (Alamosaurus, Parasaurolophus). Both
+sides gain. Note: bees settle on the richest fruit tiles rather than dispersing (normal food-seeking
+migration), and the demo's main fruit-eater Alamosaurus is reproduction-limited, so the population-level
+benefit is subtle — the mechanic is verified in isolation by `Pollination_LiftsFruitRegen`. Currently
+only Fruit is pollinated; extend `RegenerateResources` for other flowering subtypes.
 
 ### 10. Disease
 Player triggers disease on a tile. It spreads intra-tile (rate × density bonus) and

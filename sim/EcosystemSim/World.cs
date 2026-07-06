@@ -55,15 +55,33 @@ public class World
 
     private const float FertilizerBoost = 0.02f;
 
+    // half-saturation for pollination: a species reaches half its PollinationBoost at this many
+    // pollinators on the tile, so the mutualist benefit ramps up with the swarm and saturates
+    private const float PollinationHalfSaturation = 8f;
+
+    // Fruit (flowering-plant) regen is lifted where pollinators are present — the mutualist half of the
+    // bee↔plant relationship (the bees get fed by feeding on the fruit they help set). Boost saturates
+    // with pollinator count and stacks across any pollinator species on the tile.
+    private static float PollinationBoostOn(Tile tile)
+    {
+        var boost = 0f;
+        foreach (var pop in tile.Populations)
+            if (pop.Count > 0 && pop.Species.PollinationBoost > 0f)
+                boost += pop.Species.PollinationBoost * (pop.Count / (pop.Count + PollinationHalfSaturation));
+        return boost;
+    }
+
     private void RegenerateResources(Tile tile)
     {
         var fertilizer = tile.Byproducts.FirstOrDefault(b => b.Type == ByproductType.Fertilizer);
         var fertBonus  = fertilizer is not null ? fertilizer.Amount * FertilizerBoost : 0f;
+        var pollination = PollinationBoostOn(tile);
 
         foreach (var pool in tile.Resources)
         {
             var regenMult = SeasonMultiplier(State.CurrentSeason, pool.Type)
                           * WeatherMultiplier(State.CurrentWeather, pool.Type);
+            if (pool.FoodSubtype == FoodSubtype.Fruit) regenMult *= 1f + pollination;
             var bonus     = pool.Type == ResourceType.Food ? fertBonus : 0f;
             pool.Amount = MathF.Min(pool.Capacity, pool.Amount + pool.RegenPerTick * regenMult + bonus);
         }
@@ -1245,6 +1263,7 @@ public class World
             AsPreyCategory       = parent.AsPreyCategory,
             HerdDefense          = parent.HerdDefense,
             HuntDifficulty       = parent.HuntDifficulty,
+            PollinationBoost     = parent.PollinationBoost,
             PreferredPrey        = parent.PreferredPrey,
             AcceptedPrey         = parent.AcceptedPrey,
             ByproductRates       = parent.ByproductRates.ToDictionary(kv => kv.Key, kv => kv.Value * sizeIndex),
