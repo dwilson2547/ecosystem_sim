@@ -14,7 +14,7 @@ prototype (`SimConsole`) still works but the real UI is in `godot/`.
 
 - **Language:** C# 12, .NET 8
 - **Engine layer:** `EcosystemSim` — a class library, zero UI dependencies, engine-agnostic
-- **Tests:** xUnit 3, `EcosystemSim.Tests` — 81 tests, run `dotnet test` from `sim/`
+- **Tests:** xUnit 3, `EcosystemSim.Tests` — 82 tests, run `dotnet test` from `sim/`
 - **Console UI:** `SimConsole` — terminal renderer / prototype; run from `sim/`
 - **Game UI:** Godot 4.7 (.NET), lives in `godot/`; references `EcosystemSim` via ProjectReference
 
@@ -56,11 +56,12 @@ sim/
 │   ├── ByproductType.cs    # Enum: Fertilizer
 │   ├── TerrainType.cs      # Enum: Plains/Forest/Swamp/Desert/Highland/River/ShallowOcean/DeepOcean
 │   ├── Season.cs           # Enum: Spring/Summer/Autumn/Winter
+    ├── Weather.cs          # Enum: Normal/Rainy/Drought (world-level regen modifier over seasons)
 │   ├── Disease.cs          # Disease blueprint (spread, mortality, recovery rates)
 │   └── *Command.cs         # IWorldCommand implementations for player interventions
 │
 ├── EcosystemSim.Tests/     # xUnit tests
-│   └── WorldTests.cs       # 81 tests; isolated worlds, no seeder dependency
+│   └── WorldTests.cs       # 82 tests; isolated worlds, no seeder dependency
 │
 ├── SimConsole/             # Terminal prototype
 │   ├── Program.cs          # Input loop + tick scheduling
@@ -77,7 +78,7 @@ sim/
 
 ```bash
 cd sim
-dotnet test                        # run all 81 tests
+dotnet test                        # run all 82 tests
 dotnet run --project SimConsole    # terminal prototype
 dotnet run --project EcoReport -c Release   # headless ecology stability report (balance tuning)
 ```
@@ -120,6 +121,16 @@ Sustained heavy browsing by Alamosaurus herds can permanently clear a forest int
 25-tick seasons in order Spring→Summer→Autumn→Winter. Multipliers applied to `RegenPerTick`
 each tick. Winter is brutal (0.3× food, 0.2× water). Spring is lush (1.3× food, 1.4× water).
 Current season shown in the header. Stored in `WorldState.CurrentSeason`.
+
+### 3a. Weather
+A world-level regen multiplier layered **on top of** seasons (they stack multiplicatively). Runs in
+stochastic multi-tick spells driven by the world RNG (so a seeded run reproduces its weather):
+`Normal` (~64% of ticks), `Rainy` (~1.25× food, 1.6× water), `Drought` (~0.65× food, 0.4× water).
+`World.AdvanceWeather` rolls a new spell (`Weather` enum) + duration when `WeatherTicksRemaining`
+hits 0; `World.WeatherMultiplier` is the regen factor. Stored in `WorldState.CurrentWeather`, shown
+in the Godot HUD. Droughts genuinely stress herbivores (a severe one can thin a herd below its
+`HerdDefense` scale and expose it to predators) — the drought multipliers are the knob for how deadly
+weather is.
 
 ### 4. Populations & species
 A `SpeciesDefinition` is a blueprint. A `Population` is a live group on a specific tile. The

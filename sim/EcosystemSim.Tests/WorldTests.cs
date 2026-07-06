@@ -1627,6 +1627,34 @@ public class WorldTests
     }
 
     [Fact]
+    public void Weather_DroughtSlowsRegenAndRainSpeedsIt()
+    {
+        float RegenUnder(Weather weather)
+        {
+            var world = new World();
+            var tile  = world.State.Map.GetTile(0, 0);
+            tile.Resources.Clear();
+            var pool = new ResourcePool
+            {
+                Type = ResourceType.Food, FoodSubtype = FoodSubtype.Graze,
+                Amount = 0f, Capacity = 10_000f, RegenPerTick = 100f,
+            };
+            tile.Resources.Add(pool);
+            world.State.CurrentSeason         = Season.Summer;  // food season mult 1.0 → isolate weather
+            world.State.CurrentWeather        = weather;
+            world.State.WeatherTicksRemaining = 100;            // don't re-roll mid-test
+            world.Tick();
+            return pool.Amount;
+        }
+
+        var drought = RegenUnder(Weather.Drought);
+        var normal  = RegenUnder(Weather.Normal);
+        var rainy   = RegenUnder(Weather.Rainy);
+        Assert.True(drought < normal, $"drought regen {drought} should be < normal {normal}");
+        Assert.True(rainy   > normal, $"rain regen {rainy} should be > normal {normal}");
+    }
+
+    [Fact]
     public void HuntPrey_CarnivoreWithNoPreyStarves()
     {
         var world    = new World();

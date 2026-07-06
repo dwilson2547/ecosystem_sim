@@ -9,10 +9,11 @@ namespace EcosystemGame;
 /// </summary>
 public partial class HUD : CanvasLayer
 {
-    private Label _tickLabel   = null!;
-    private Label _seasonLabel = null!;
-    private Label _yearLabel   = null!;
-    private Label _speedLabel  = null!;
+    private Label _tickLabel    = null!;
+    private Label _seasonLabel  = null!;
+    private Label _weatherLabel = null!;
+    private Label _yearLabel    = null!;
+    private Label _speedLabel   = null!;
 
     public override void _Ready()
     {
@@ -26,12 +27,13 @@ public partial class HUD : CanvasLayer
         vbox.MouseFilter = Control.MouseFilterEnum.Ignore;
         panel.AddChild(vbox);
 
-        _tickLabel   = MakeLabel();
-        _seasonLabel = MakeLabel();
-        _yearLabel   = MakeLabel();
-        _speedLabel  = MakeLabel();
+        _tickLabel    = MakeLabel();
+        _seasonLabel  = MakeLabel();
+        _weatherLabel = MakeLabel();
+        _yearLabel    = MakeLabel();
+        _speedLabel   = MakeLabel();
 
-        foreach (var lbl in new[] { _tickLabel, _seasonLabel, _yearLabel, _speedLabel })
+        foreach (var lbl in new[] { _tickLabel, _seasonLabel, _weatherLabel, _yearLabel, _speedLabel })
             vbox.AddChild(lbl);
 
         var hint = new Label
@@ -61,6 +63,8 @@ public partial class HUD : CanvasLayer
         _yearLabel.Text   = $"Year    {state.Tick / (World.TicksPerSeason * 4) + 1}";
         _seasonLabel.Text = state.CurrentSeason.ToString();
         _seasonLabel.AddThemeColorOverride("font_color", SeasonColor(state.CurrentSeason));
+        _weatherLabel.Text = WeatherText(state.CurrentWeather);
+        _weatherLabel.AddThemeColorOverride("font_color", WeatherColor(state.CurrentWeather));
         _speedLabel.Text  = $"{sim.TickInterval:F2}s / tick";
     }
 
@@ -78,5 +82,19 @@ public partial class HUD : CanvasLayer
         Season.Autumn => new Color(1.0f, 0.6f, 0.1f),
         Season.Winter => new Color(0.6f, 0.85f, 1.0f),
         _             => Colors.White,
+    };
+
+    private static string WeatherText(Weather w) => w switch
+    {
+        Weather.Rainy   => "Rain",
+        Weather.Drought => "Drought",
+        _               => "Clear",
+    };
+
+    private static Color WeatherColor(Weather w) => w switch
+    {
+        Weather.Rainy   => new Color(0.4f, 0.7f, 1.0f),
+        Weather.Drought => new Color(0.9f, 0.5f, 0.2f),
+        _               => new Color(0.8f, 0.8f, 0.8f),
     };
 }

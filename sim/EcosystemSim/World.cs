@@ -46,6 +46,7 @@ public class World
         ApplySpeciation();
         State.Tick++;
         AdvanceSeason();
+        AdvanceWeather();
     }
 
     public void Apply(IWorldCommand command) => command.Execute(State);
@@ -61,9 +62,10 @@ public class World
 
         foreach (var pool in tile.Resources)
         {
-            var seasonMult = SeasonMultiplier(State.CurrentSeason, pool.Type);
-            var bonus      = pool.Type == ResourceType.Food ? fertBonus : 0f;
-            pool.Amount = MathF.Min(pool.Capacity, pool.Amount + pool.RegenPerTick * seasonMult + bonus);
+            var regenMult = SeasonMultiplier(State.CurrentSeason, pool.Type)
+                          * WeatherMultiplier(State.CurrentWeather, pool.Type);
+            var bonus     = pool.Type == ResourceType.Food ? fertBonus : 0f;
+            pool.Amount = MathF.Min(pool.Capacity, pool.Amount + pool.RegenPerTick * regenMult + bonus);
         }
     }
 
@@ -97,6 +99,37 @@ public class World
         if (State.SeasonTick < TicksPerSeason) return;
         State.SeasonTick    = 0;
         State.CurrentSeason = (Season)(((int)State.CurrentSeason + 1) % 4);
+    }
+
+    // ── weather ─────────────────────────────────────────────────────────────
+    // A world-level regen multiplier that stacks on the season. Rain floods the water pools and lifts
+    // plant growth; drought crimps both, water hardest. Prey (predation) is unaffected.
+    private static float WeatherMultiplier(Weather weather, ResourceType type) =>
+        type == ResourceType.Prey ? 1f
+        : (weather, type) switch
+        {
+            (Weather.Rainy,   ResourceType.Water) => 1.6f,
+            (Weather.Rainy,   _)                  => 1.25f,
+            (Weather.Drought, ResourceType.Water) => 0.4f,
+            (Weather.Drought, _)                  => 0.65f,
+            _                                     => 1f,
+        };
+
+    // Weather runs in stochastic multi-tick spells: mostly Normal, occasionally a Rainy or Drought
+    // spell. Uses the world RNG so a seeded run reproduces its weather exactly.
+    private void AdvanceWeather()
+    {
+        if (State.WeatherTicksRemaining > 0) { State.WeatherTicksRemaining--; return; }
+
+        var roll = _random.NextDouble();
+        var (weather, minTicks, maxTicks) = roll switch
+        {
+            < 0.18 => (Weather.Rainy,   8, 20),
+            < 0.36 => (Weather.Drought, 8, 20),
+            _      => (Weather.Normal, 15, 30),
+        };
+        State.CurrentWeather        = weather;
+        State.WeatherTicksRemaining = _random.Next(minTicks, maxTicks + 1);
     }
 
     private static void ProduceByproducts(Tile tile)
