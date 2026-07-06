@@ -14,7 +14,7 @@ prototype (`SimConsole`) still works but the real UI is in `godot/`.
 
 - **Language:** C# 12, .NET 8
 - **Engine layer:** `EcosystemSim` — a class library, zero UI dependencies, engine-agnostic
-- **Tests:** xUnit 3, `EcosystemSim.Tests` — 78 tests, run `dotnet test` from `sim/`
+- **Tests:** xUnit 3, `EcosystemSim.Tests` — 81 tests, run `dotnet test` from `sim/`
 - **Console UI:** `SimConsole` — terminal renderer / prototype; run from `sim/`
 - **Game UI:** Godot 4.7 (.NET), lives in `godot/`; references `EcosystemSim` via ProjectReference
 
@@ -60,12 +60,15 @@ sim/
 │   └── *Command.cs         # IWorldCommand implementations for player interventions
 │
 ├── EcosystemSim.Tests/     # xUnit tests
-│   └── WorldTests.cs       # 78 tests; isolated worlds, no seeder dependency
+│   └── WorldTests.cs       # 81 tests; isolated worlds, no seeder dependency
 │
-└── SimConsole/             # Terminal prototype
-    ├── Program.cs          # Input loop + tick scheduling
-    ├── WorldSeeder.cs      # Creates the demo world (species, terrain map, initial pops)
-    └── Renderer.cs         # Console map + population table + faction relations
+├── SimConsole/             # Terminal prototype
+│   ├── Program.cs          # Input loop + tick scheduling
+│   ├── WorldSeeder.cs      # Creates the demo world (species, terrain map, initial pops)
+│   └── Renderer.cs         # Console map + population table + faction relations
+│
+└── EcoReport/              # Headless ecology stability report — balance-tuning tool (see its README)
+    └── Program.cs          # Multi-run tick harness; per-lineage extinction/boom/oscillation metrics
 ```
 
 ---
@@ -74,8 +77,9 @@ sim/
 
 ```bash
 cd sim
-dotnet test                        # run all 78 tests
+dotnet test                        # run all 81 tests
 dotnet run --project SimConsole    # terminal prototype
+dotnet run --project EcoReport -c Release   # headless ecology stability report (balance tuning)
 ```
 
 SimConsole controls: `[Space]` pause, `[← →]` speed, `[D]` disease, `[T]` trade, `[Q]` quit.
@@ -132,7 +136,8 @@ holds stable in between — the neutral zone [0.50, 0.85) lets accepted-food spe
 `EaseOfEating` is a `Dictionary<FoodSubtype, float>` (0–5 scale) on each `SpeciesDefinition`. Land
 demo species: Triceratops (Graze 5, Browse 3, Fruit 1), Parasaurolophus (Browse 5, Graze 3, Fruit 2),
 Alamosaurus (Fruit 5, Browse 2). Marine demo species: Mosasaurus (Fish 4, Shrimp 3, Crustacean 2),
-Plesiosaur (Fish 5, Squid 3). Empty dict = generalist. See `docs/food-types.md`.
+Plesiosaur (Fish 5, Squid 3), Xiphactinus (Shrimp 4, Fish 3, Crustacean 2 — a shallow predator that
+also hunts Mosasaurus). Empty dict = generalist. See `docs/food-types.md`.
 
 ### 5. Byproducts & fertilizer
 Species produce byproducts (e.g. Fertilizer) at a per-individual-per-tick rate. Fertilizer on
@@ -179,7 +184,14 @@ Carnivore species set `PreyConsumptionRate` and declare `PreferredPrey` / `Accep
 runs per tile after `DistributeResources`: preferred prey → full satisfaction, accepted prey →
 2/3 satisfaction. A **Holling type-III functional response** makes only `count²/(count+K)` of a herd
 huntable per tick (`PreyRefugeHalfSaturation` K), so efficiency collapses as prey thin out and a
-predator can never zero a herd in one pass. Prey deaths accumulate fractionally via
+predator can never zero a herd in one pass. On top of that, prey may set **`HerdDefense`** (0–1):
+safety in numbers cuts the predator's *realized kill* on a massed herd by
+`HerdDefense × count/(count+HerdDefenseHalfSaturation)`, fading to nothing as the herd thins. Where
+the refuge protects *thinned* herds (low count), herd defense protects *massed* herds (high count) —
+together they stop a big herd being ground down into the vulnerable-tail death spiral, giving a
+survival floor without inflating the ceiling. This is why Parasaurolophus (`HerdDefense 0.8`) no
+longer goes extinct under T-Rex pressure: a lone apex can't efficiently crop a large hadrosaur herd.
+Prey deaths accumulate fractionally via
 `PredationAccumulator` (whole individuals only when it crosses 1) rather than `ceil`-ing every hunt.
 Prey also **scatter**: a herd ≥ `ScatterMinHerd` (12) that a predator invades splits a third off to
 the safest reachable neighbour (`BestNeighborAwayFromPredators`), throttled by migration cooldown,
@@ -188,8 +200,13 @@ set `AsPreyCategory`. Carnivores migrate toward prey via the standard BFS.
 Demo carnivores: **Kronosaurus** at DeepOcean, hunting Plesiosaur (preferred) and Mosasaurus
 (accepted); **Tyrannosaurus** on land — an obligate-carnivore apex pack that thins Parasaurolophus
 (SmallHerbivore, preferred) and Triceratops (LargeHerbivore, accepted), keeping the hadrosaur swarm
-from razing the forests. Prey categories: Parasaurolophus=SmallHerbivore, Triceratops=LargeHerbivore,
-Mosasaurus=SmallMarine, Plesiosaur=LargeMarine.
+from razing the forests; **Xiphactinus** in ShallowOcean — a dual-consumption predator pinned to the
+shallow strip that *prefers* Mosasaurus (SmallMarine). It exists to close a spatial refuge: hunting is
+per-tile, and the deep-water apexes (which only *accept* Mosasaurus) stay in deep water on their
+preferred Plesiosaur, so the shallow strip where Mosasaurus breeds had no predator on it at all —
+Mosasaurus grew unbounded (30→~1000). Xiphactinus crops it at the source; a per-tile `MaxCount` keeps
+the shoal below its prey and Mosasaurus's own `MaxCount` is a coarse safety ceiling. Prey categories:
+Parasaurolophus=SmallHerbivore, Triceratops=LargeHerbivore, Mosasaurus=SmallMarine, Plesiosaur=LargeMarine.
 
 ### 10. Disease
 Player triggers disease on a tile. It spreads intra-tile (rate × density bonus) and

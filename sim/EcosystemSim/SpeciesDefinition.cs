@@ -39,6 +39,13 @@ public class SpeciesDefinition
     // what prey category this species represents when hunted (null = cannot be preyed upon)
     public PreyCategory? AsPreyCategory { get; init; }
 
+    // herd defense: safety in numbers. A large herd on a tile collectively deters predators (mobbing,
+    // vigilance), cutting the fraction of it a predator can take that tick. 0 = no defense (default);
+    // approaches this ceiling as the herd grows (half-strength at HerdDefenseHalfSaturation head). This
+    // keeps a big herd from being ground down into the vulnerable-tail regime, giving a survival floor
+    // without inflating the ceiling — a thinned herd loses the bonus and is hunted normally.
+    public float HerdDefense { get; init; }
+
     // prey categories this carnivore hunts at full satisfaction
     public HashSet<PreyCategory> PreferredPrey { get; init; } = [];
 

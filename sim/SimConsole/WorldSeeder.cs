@@ -57,6 +57,8 @@ public static class WorldSeeder
             // mid-height browser: browse specialist, decent grazer, some fruit
             EaseOfEating = { [FoodSubtype.Browse] = 5f, [FoodSubtype.Graze] = 3f, [FoodSubtype.Fruit] = 2f },
             AsPreyCategory   = PreyCategory.SmallHerbivore,   // the hadrosaur swarm — T-Rex's staple
+            HerdDefense      = 0.8f,   // safety in numbers: a massed hadrosaur herd deters the T-Rex,
+                                       // so it can't grind a big herd into the vulnerable-tail death spiral
             ByproductRates   = { [ByproductType.Fertilizer] = 0.06f },
             ReproductionRate = 0.014f,   // curbed from 0.02 — unchecked it carpeted the map and razed forests
             StarvationRate   = 0.015f,

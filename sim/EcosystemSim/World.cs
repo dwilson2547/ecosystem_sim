@@ -237,6 +237,11 @@ public class World
     // predators can never drive a population to zero in one pass. Larger K = safer prey.
     private const float PreyRefugeHalfSaturation = 20f;
 
+    // herd-defense saturation: a herd reaches half its species' HerdDefense ceiling at this head-count,
+    // so defense ramps up as a herd grows and fades as it thins. Distinct from the refuge above —
+    // the refuge protects thinned herds (low count), herd defense protects massed herds (high count).
+    private const float HerdDefenseHalfSaturation = 60f;
+
     // prey herds below this size don't scatter — they're already at refuge scale, and fragmenting
     // them further would spread prey into predator-free tiles faster than predators can follow
     private const int ScatterMinHerd = 12;
@@ -279,6 +284,13 @@ public class World
             return Math.Max(0f, findable - preyConsumed[prey]);
         }
 
+        // herd defense: a massed herd deters the predator, cutting its realized kill this tick (applied
+        // to the take, not the findable pool — a lone T-Rex's appetite is tiny next to a big herd, so
+        // only reducing the kill actually slows the grind). Fades to nothing as the herd thins.
+        float PreyTakeMultiplier(Population prey) =>
+            prey.Species.HerdDefense <= 0f ? 1f
+                : 1f - prey.Species.HerdDefense * (prey.Count / (prey.Count + HerdDefenseHalfSaturation));
+
         // pass 1: preferred prey — full sat; empty PreferredPrey means "any prey at full sat"
         foreach (var preyPop in preyPops)
         {
@@ -291,12 +303,13 @@ public class World
             var totalDemand = eligible.Sum(RemainingDemand);
             if (totalDemand == 0 || available == 0) continue;
 
-            var ratio = Math.Min(1f, available / totalDemand);
+            var ratio       = Math.Min(1f, available / totalDemand);
+            var takeMult    = PreyTakeMultiplier(preyPop);
             foreach (var hunter in eligible)
             {
                 var d = RemainingDemand(hunter);
                 if (d <= 0) continue;
-                var taken = d * ratio;
+                var taken = d * ratio * takeMult;
                 preyConsumed[preyPop] += taken;
                 received[hunter]      += taken;
             }
@@ -317,12 +330,13 @@ public class World
             var totalDemand = eligible.Sum(RemainingDemand);
             if (totalDemand == 0 || available == 0) continue;
 
-            var ratio = Math.Min(1f, available / totalDemand);
+            var ratio       = Math.Min(1f, available / totalDemand);
+            var takeMult    = PreyTakeMultiplier(preyPop);
             foreach (var hunter in eligible)
             {
                 var d = RemainingDemand(hunter);
                 if (d <= 0) continue;
-                var taken = d * ratio;
+                var taken = d * ratio * takeMult;
                 preyConsumed[preyPop] += taken;
                 received[hunter]      += taken * AcceptedPreyValue;
             }
@@ -1175,6 +1189,7 @@ public class World
             PreyConsumptionRate  = parent.PreyConsumptionRate  * sizeIndex,
             EaseOfEating         = new Dictionary<FoodSubtype, float>(parent.EaseOfEating),
             AsPreyCategory       = parent.AsPreyCategory,
+            HerdDefense          = parent.HerdDefense,
             PreferredPrey        = parent.PreferredPrey,
             AcceptedPrey         = parent.AcceptedPrey,
             ByproductRates       = parent.ByproductRates.ToDictionary(kv => kv.Key, kv => kv.Value * sizeIndex),

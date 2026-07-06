@@ -1599,6 +1599,34 @@ public class WorldTests
     }
 
     [Fact]
+    public void HuntPrey_HerdDefenseReducesKillsOnMassedHerd()
+    {
+        // Safety in numbers: a large herd with HerdDefense loses fewer to the same predator than an
+        // identical undefended one. Same setup, only HerdDefense differs.
+        int LossFor(float herdDefense)
+        {
+            var world = new World();
+            var tile  = world.State.Map.GetTile(0, 0);
+            var predator = PredatorSpecies("Rex", rate: 3f, preferred: PreyCategory.SmallHerbivore);
+            var prey = new SpeciesDefinition
+            {
+                Name = "Herd", AsPreyCategory = PreyCategory.SmallHerbivore,
+                HerdDefense = herdDefense, ReproductionRate = 0f, StarvationRate = 0f,
+            };
+            var predatorPop = new Population { Species = predator, Count = 30 };
+            var preyPop     = new Population { Species = prey,     Count = 400 };
+            tile.Populations.AddRange([predatorPop, preyPop]);
+            world.Tick();
+            return 400 - preyPop.Count;
+        }
+
+        var undefendedLoss = LossFor(0f);
+        var defendedLoss   = LossFor(0.8f);
+        Assert.True(defendedLoss < undefendedLoss,
+            $"herd defense should cut kills on a massed herd (defended {defendedLoss} vs undefended {undefendedLoss})");
+    }
+
+    [Fact]
     public void HuntPrey_CarnivoreWithNoPreyStarves()
     {
         var world    = new World();
