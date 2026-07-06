@@ -115,6 +115,10 @@ public static class DemoWorldSeeder
             WarAggression    = 0.2f,
             CombatStrength   = 1.0f,
             Immunity         = 0.3f,
+            MaxCount         = 40,       // per-tile safety ceiling; Xiphactinus does the real cropping.
+                                         // Kronosaurus/Megalodon only *accept* Mosasaurus and stay in deep
+                                         // water on Plesiosaur, so the shallow strip was a predator-free
+                                         // nursery and Mosasaurus carpeted the map (30→~1000 uncropped).
         };
 
         var plesiosaur = new SpeciesDefinition
@@ -184,6 +188,37 @@ public static class DemoWorldSeeder
             AllowedTerrains  = [TerrainType.DeepOcean],
         };
 
+        // dedicated shallow-water hunter — closes the Mosasaurus refuge. Pinned to ShallowOcean (where
+        // Mosasaurus breeds), it *prefers* SmallMarine so it actively crops the hadrosaur-of-the-sea the
+        // deep-water apexes never reach. A dual-consumption predator that subsists on shallow fish/shrimp
+        // between hunts: the fish floor is deliberate — it stops the shoal crashing when it thins a tile
+        // (a pure obligate version over-cropped Mosasaurus to extinction by t33, then starved out). The
+        // fish subsidy alone let it plateau at ~135 head (an inverted pyramid), so a per-tile MaxCount
+        // keeps the shoal below its prey. Left with no AsPreyCategory — a second shallow apex, not itself
+        // prey; tagging it SmallMarine would make it hunt its own kind, and feeding it to the Megalodon
+        // for trophic depth needs a new meso prey tier.
+        var xiphactinus = new SpeciesDefinition
+        {
+            Name             = "Xiphactinus",
+            RootName         = "Xiphactinus",
+            ViewRadius       = 2,
+            FoodConsumptionRate  = 1f,
+            WaterConsumptionRate = 0f,
+            EaseOfEating     = { [FoodSubtype.Shrimp] = 4f, [FoodSubtype.Fish] = 3f, [FoodSubtype.Crustacean] = 2f },
+            PreyConsumptionRate  = 0.3f,
+            PreferredPrey    = [PreyCategory.SmallMarine],
+            ByproductRates   = {},
+            ReproductionRate = 0.008f,
+            StarvationRate   = 0.012f,
+            MigrationThreshold     = 0.5f,
+            MigrationCooldownTicks = 2,
+            WarAggression    = 0.15f,
+            CombatStrength   = 1.8f,
+            Immunity         = 0.3f,
+            MaxCount         = 15,       // per-tile cap — keep the shoal below its Mosasaurus prey
+            AllowedTerrains  = [TerrainType.ShallowOcean],
+        };
+
         // ── world + terrain ───────────────────────────────────────────────────
 
         var world = new World(16, 16);
@@ -248,9 +283,10 @@ public static class DemoWorldSeeder
         var plesioDrift  = new Faction { Name = "Plesiosaur Drift", PrimarySpecies = plesiosaur };
         var kronosPod    = new Faction { Name = "Kronosaurus Pod",  PrimarySpecies = kronosaurus };
         var theMegalodon = new Faction { Name = "The Megalodon",    PrimarySpecies = megalodon };
+        var xiphShoal    = new Faction { Name = "Xiphactinus Shoal", PrimarySpecies = xiphactinus };
 
         world.State.Factions.AddRange([highlandTric, valleyTric, forestAlamo, easternPara, midlandPara,
-                                       tyrantPack, mosaPack, plesioDrift, kronosPod, theMegalodon]);
+                                       tyrantPack, mosaPack, plesioDrift, kronosPod, theMegalodon, xiphShoal]);
 
         void Place(Faction faction, int x, int y, int count)
         {
@@ -272,6 +308,7 @@ public static class DemoWorldSeeder
         Place(plesioDrift, 12,  6, 20);   // DeepOcean home; forays to adjacent ShallowOcean for fish
         Place(kronosPod,   13,  5,  8);
         Place(theMegalodon, 14,  4,  1);
+        Place(xiphShoal,   11,  4, 12);   // shallow strip, amid the Mosasaurus nursery
 
         return world;
     }

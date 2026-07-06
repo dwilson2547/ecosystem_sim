@@ -72,8 +72,11 @@ readily than one with ease 5, because the weighted food value is lower.
 |---------|------|--------|------------|-------|-------|
 | Mosasaurus | 4 | 3 | 2 | — | ambush hunter, shallow water |
 | Plesiosaur | 5 | — | — | 3 | pursuit hunter, shallow + deep |
+| Xiphactinus | 3 | 4 | 2 | — | shallow predator; also hunts Mosasaurus (prefers SmallMarine), pinned to ShallowOcean |
 
 Kronosaurus has no `EaseOfEating` — it's a pure predator (`PreyConsumptionRate`), not a food consumer.
+Megalodon is pinned to DeepOcean and Xiphactinus to ShallowOcean (`AllowedTerrains`), which is why the
+shallow strip needed its own hunter — the deep apexes cannot reach the Mosasaurus nursery.
 
 ---
 
