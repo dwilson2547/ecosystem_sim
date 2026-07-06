@@ -6,4 +6,5 @@ public enum PreyCategory
     LargeHerbivore,  // Alamosaurus
     SmallMarine,     // Mosasaurus
     LargeMarine,     // Plesiosaur
+    Insect,          // Locust (eaten by Meganeura and future insectivores)
 }

@@ -14,7 +14,7 @@ prototype (`SimConsole`) still works but the real UI is in `godot/`.
 
 - **Language:** C# 12, .NET 8
 - **Engine layer:** `EcosystemSim` — a class library, zero UI dependencies, engine-agnostic
-- **Tests:** xUnit 3, `EcosystemSim.Tests` — 83 tests, run `dotnet test` from `sim/`
+- **Tests:** xUnit 3, `EcosystemSim.Tests` — 84 tests, run `dotnet test` from `sim/`
 - **Console UI:** `SimConsole` — terminal renderer / prototype; run from `sim/`
 - **Game UI:** Godot 4.7 (.NET), lives in `godot/`; references `EcosystemSim` via ProjectReference
 
@@ -52,7 +52,7 @@ sim/
 │   ├── ByproductPool.cs    # A tile's accumulated byproduct (e.g. fertilizer)
 │   ├── ResourceType.cs     # Enum: Food, Water, Prey
 │   ├── FoodSubtype.cs      # Enum: Graze/Browse/Fruit/Roots/Fish/Shrimp/Crustacean/Squid/Whale
-│   ├── PreyCategory.cs     # Enum: SmallHerbivore/LargeHerbivore/SmallMarine/LargeMarine
+│   ├── PreyCategory.cs     # Enum: SmallHerbivore/LargeHerbivore/SmallMarine/LargeMarine/Insect
 │   ├── ByproductType.cs    # Enum: Fertilizer
 │   ├── TerrainType.cs      # Enum: Plains/Forest/Swamp/Desert/Highland/River/ShallowOcean/DeepOcean
 │   ├── Season.cs           # Enum: Spring/Summer/Autumn/Winter
@@ -61,7 +61,7 @@ sim/
 │   └── *Command.cs         # IWorldCommand implementations for player interventions
 │
 ├── EcosystemSim.Tests/     # xUnit tests
-│   └── WorldTests.cs       # 83 tests; isolated worlds, no seeder dependency
+│   └── WorldTests.cs       # 84 tests; isolated worlds, no seeder dependency
 │
 ├── SimConsole/             # Terminal prototype
 │   ├── Program.cs          # Input loop + tick scheduling
@@ -78,7 +78,7 @@ sim/
 
 ```bash
 cd sim
-dotnet test                        # run all 83 tests
+dotnet test                        # run all 84 tests
 dotnet run --project SimConsole    # terminal prototype
 dotnet run --project EcoReport -c Release   # headless ecology stability report (balance tuning)
 ```
@@ -226,6 +226,16 @@ preferred Plesiosaur, so the shallow strip where Mosasaurus breeds had no predat
 Mosasaurus grew unbounded (30→~1000). Xiphactinus crops it at the source; a per-tile `MaxCount` keeps
 the shoal below its prey and Mosasaurus's own `MaxCount` is a coarse safety ceiling. Prey categories:
 Parasaurolophus=SmallHerbivore, Triceratops=LargeHerbivore, Mosasaurus=SmallMarine, Plesiosaur=LargeMarine.
+
+### 9a. Insects
+A self-contained insect guild on the land side (`PreyCategory.Insect`): **Locust** — an r-selected
+grazing pest that swarms the plains and competes with the big grazers for `Graze`, with `HerdDefense`
+so a dense swarm is never fully consumed and a fast `StarvationRate` so it crashes when the grass is
+stripped (boom-bust plagues, oscillating ~40→2000+); and **Meganeura** — a giant dragonfly, an
+obligate insectivore capped small (`MaxCount`) so it lives off the swarm's margin rather than
+controlling it (locusts are food-limited, not predation-limited). Adding the locust competitor also
+pulled the over-abundant grazers leaner. No dedicated dino insectivore yet — insects are a prey base
+future species (and symbiosis, e.g. pollinators) can build on.
 
 ### 10. Disease
 Player triggers disease on a tile. It spreads intra-tile (rate × density bonus) and

@@ -94,6 +94,53 @@ public static class WorldSeeder
             Immunity         = 0.4f,
         };
 
+        // ── insects ─────────────────────────────────────────────────────────
+        // A self-contained insect food web: locusts graze the plains and boom fast; Meganeura (giant
+        // dragonfly) is the insectivore that checks them. Locusts compete with the big grazers for
+        // Graze, so a swarm pulls food away from the hadrosaurs until the dragonflies (or a food crash)
+        // knock them back — a new boom-bust layer that doesn't lean on the dinosaur balance.
+        var locust = new SpeciesDefinition
+        {
+            Name = "Locust",
+            RootName = "Locust",
+            FoodConsumptionRate  = 0.2f,    // tiny appetite each, but they swarm
+            WaterConsumptionRate = 0f,
+            EaseOfEating = { [FoodSubtype.Graze] = 5f, [FoodSubtype.Browse] = 2f },
+            AsPreyCategory   = PreyCategory.Insect,
+            HerdDefense      = 0.4f,        // a dense swarm can't be fully consumed — a floor so it never wipes
+            HuntDifficulty   = 0.25f,
+            ByproductRates   = {},
+            ReproductionRate = 0.028f,      // r-selected; ceiling set by grass (food), MaxCount, and dragonflies
+            StarvationRate   = 0.06f,       // crashes fast when the grass is stripped — boom-bust plagues
+            MigrationThreshold = 0.5f,
+            MaxCount         = 45,          // per-tile swarm cap — keeps a plague moderate
+            WarAggression    = 0f,
+            CombatStrength   = 0.1f,
+            Immunity         = 0.2f,
+        };
+
+        var meganeura = new SpeciesDefinition
+        {
+            Name = "Meganeura",
+            RootName = "Meganeura",
+            ViewRadius = 3,                 // ranges widely for swarms
+            // obligate insectivore — a small, capped population that lives off the locust swarm's margin
+            // rather than controlling it (locusts are food-limited); MaxCount stops it over-cropping.
+            FoodConsumptionRate  = 0f,
+            WaterConsumptionRate = 0f,
+            PreyConsumptionRate  = 0.5f,
+            PreferredPrey = [PreyCategory.Insect],
+            ByproductRates   = {},
+            ReproductionRate = 0.02f,
+            StarvationRate   = 0.01f,       // sips through lean spells rather than crashing
+            MigrationThreshold     = 0.5f,
+            MigrationCooldownTicks = 1,
+            MaxCount         = 18,          // per-tile cap — crops the swarm but can't wipe it (locust herd defense)
+            WarAggression    = 0f,
+            CombatStrength   = 0.3f,
+            Immunity         = 0.25f,
+        };
+
         // ── marine species ────────────────────────────────────────────────────
 
         var mosasaurus = new SpeciesDefinition
@@ -283,9 +330,12 @@ public static class WorldSeeder
         var kronosPod      = new Faction { Name = "Kronosaurus Pod",  PrimarySpecies = kronosaurus };
         var theMegalodon   = new Faction { Name = "The Megalodon",    PrimarySpecies = megalodon };
         var xiphShoal      = new Faction { Name = "Xiphactinus Shoal", PrimarySpecies = xiphactinus };
+        var locustSwarm    = new Faction { Name = "Locust Swarm",     PrimarySpecies = locust };
+        var dragonflies    = new Faction { Name = "Dragonflies",      PrimarySpecies = meganeura };
 
         world.State.Factions.AddRange([highlandTric, valleyTric, forestAlamo, easternPara, midlandPara,
-                                       tyrantPack, mosaPack, plesioDrift, kronosPod, theMegalodon, xiphShoal]);
+                                       tyrantPack, mosaPack, plesioDrift, kronosPod, theMegalodon, xiphShoal,
+                                       locustSwarm, dragonflies]);
 
         void Place(Faction faction, int x, int y, int count)
         {
@@ -301,6 +351,10 @@ public static class WorldSeeder
         Place(easternPara,  7,  9, 80);
         Place(midlandPara,  7,  6, 60);
         Place(tyrantPack,   6,  8,  5);   // central plains, amid the herbivore range
+
+        // insects — southern plains
+        Place(locustSwarm,  3, 12, 120);
+        Place(dragonflies,  4, 12, 10);
 
         // marine: shallow zone (x=10-11) and deep zone (x=12-15)
         Place(mosaPack,    10,  3, 30);

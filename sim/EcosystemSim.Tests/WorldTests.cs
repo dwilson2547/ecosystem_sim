@@ -1683,6 +1683,26 @@ public class WorldTests
     }
 
     [Fact]
+    public void HuntPrey_InsectivoreThinsInsectSwarm()
+    {
+        var world = new World();
+        var tile  = world.State.Map.GetTile(0, 0);
+        var dragonfly = PredatorSpecies("Dragonfly", rate: 1f, preferred: PreyCategory.Insect);
+        var swarm     = PreySpecies("Swarm", PreyCategory.Insect);
+        var swarmPop  = new Population { Species = swarm, Count = 300 };
+        tile.Populations.AddRange([new Population { Species = dragonfly, Count = 20 }, swarmPop]);
+
+        world.Tick();
+
+        // count map-wide: a scared swarm scatters to neighbours, which isn't a kill
+        var total = world.State.Map.AllTiles()
+            .SelectMany(t => t.Populations)
+            .Where(p => p.Species.Name == "Swarm")
+            .Sum(p => p.Count);
+        Assert.True(total < 300, $"insectivore should thin the Insect swarm (left {total})");
+    }
+
+    [Fact]
     public void HuntPrey_CarnivoreWithNoPreyStarves()
     {
         var world    = new World();
