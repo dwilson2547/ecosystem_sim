@@ -13,4 +13,6 @@ public class WorldState
     public ScenarioSession? Scenario { get; set; }
     public WorldMap Map { get; init; } = new(10, 10);
     public List<Faction> Factions { get; init; } = [];
+    public List<WorldHistorySample> History { get; } = [];
+    public List<WorldEvent> Events { get; } = [];
 }

@@ -66,6 +66,8 @@ public partial class ScenarioPanel : CanvasLayer
                 Row($"{(objective.IsMet ? "✓" : "○")} {objective.Label}", 12, color);
                 Row($"    {objective.CurrentValue}  target {objective.TargetValue}", 11,
                     new Color(0.75f, 0.75f, 0.8f));
+                Row($"    trend {ObjectiveTrend(state, objective.Id)}", 10,
+                    new Color(0.6f, 0.72f, 0.8f));
             }
 
             if (scenario.Status == ScenarioStatus.Active)
@@ -101,5 +103,23 @@ public partial class ScenarioPanel : CanvasLayer
         label.AddThemeColorOverride("font_color", color);
         _content.AddChild(label);
         return label;
+    }
+
+    private static string ObjectiveTrend(WorldState state, string objectiveId)
+    {
+        var samples = state.History
+            .Where(s => s.ObjectiveProgress.ContainsKey(objectiveId))
+            .TakeLast(2)
+            .ToList();
+        if (samples.Count < 2) return "new";
+
+        var change = samples[1].ObjectiveProgress[objectiveId]
+                   - samples[0].ObjectiveProgress[objectiveId];
+        return change switch
+        {
+            > 0.02f => "improving",
+            < -0.02f => "worsening",
+            _ => "steady",
+        };
     }
 }

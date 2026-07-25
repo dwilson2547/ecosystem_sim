@@ -61,6 +61,8 @@ godot/
     ├── FactionPanel.cs    — left-side panel: faction list, population summaries, diplomatic relations
     ├── ScenarioPanel.cs   — top-right challenge time, AP, objectives, and result
     ├── ScenarioSelectionOverlay.cs — startup Sandbox/Locust Plague/Drought Recovery picker
+    ├── HistoryPanel.cs    — bottom analysis panel: population history and recent events
+    ├── LineageChart.cs    — custom lineage-history graph renderer
     └── TileInfoPanel.cs   — right-side tile details and scenario interventions
 ```
 
@@ -99,6 +101,8 @@ Main (Node2D / SimMain)
 │       └── ScrollContainer → VBoxContainer → dynamic content
 ├── ScenarioPanel (CanvasLayer)
 │   └── PanelContainer → objective/status content + restart/new-scenario buttons
+├── HistoryPanel (CanvasLayer)
+│   └── PanelContainer → History/Events views + lineage chart or event rows
 ├── TileInfoPanel (CanvasLayer)
 │   └── PanelContainer (anchored right, 300px)
 │       └── ScrollContainer → VBoxContainer → dynamic content
@@ -123,6 +127,7 @@ Singleton accessed anywhere via `SimManager.Instance`.
 | `Reset()`         | Restart the current mode from a fresh seeded world |
 | `RequestScenarioSelection()` | Pause and reopen the mode picker |
 | `TryApplyScenarioAction(action)` | Apply an engine-validated tile intervention |
+| `ToggleAnalysis()` | Open or close the History/Events panel |
 | `SpeedUp()`       | Reduce interval by 0.25s (min 0.25s) |
 | `SpeedDown()`     | Increase interval by 0.5s (max 8.0s) |
 | signal `Ticked`   | Fired after every `World.Tick()` call |
@@ -141,6 +146,7 @@ Singleton accessed anywhere via `SimManager.Instance`.
 | Middle mouse drag | Pan camera |
 | Scroll wheel  | Zoom in / out |
 | `R`           | Restart the current scenario |
+| `H`           | Toggle population history and event analysis |
 
 ---
 
@@ -149,6 +155,7 @@ Singleton accessed anywhere via `SimManager.Instance`.
 Each tile shows:
 - **Background color** — terrain type (see `HexTile.TerrainColor`)
 - **Green tint** — fertilizer > 40 units on the tile
+- **Warning marker/tint** — orange below 60% population satisfaction; red below 30% or when diseased
 - **Dominant population indicator** — whichever living population has the highest count on the
   tile:
   - **Species with icon art** (`HexTile.IconPaths`: currently Alamosaurus, Triceratops) — rendered
@@ -213,6 +220,16 @@ Tyrannosaurus alive; finish with at most 500 locusts; and retain at least 25% av
 Drought Recovery keeps the same dinosaur-survival requirement and asks the player to finish with
 at least 55% average land freshwater and 50% average land vegetation. The world remains in drought
 except during player-seeded 45-day rain spells.
+
+## History and event feedback
+
+Press `H` or use **History & events** in the HUD to open the bottom analysis panel. **History**
+discovers lineages from the live world, shows a selectable 30-day population graph, and summarizes
+start/current/min/max/change. Before two samples exist, it explains the sampling interval.
+
+**Events** shows the latest 12 major engine events with year/day, severity color, and tile coordinates
+for interventions. The HUD mirrors the newest event in compact form. Challenge objective rows compare
+the latest two history samples and show `improving`, `steady`, or `worsening`.
 
 ## What's not yet in the UI
 

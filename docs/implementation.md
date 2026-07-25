@@ -28,6 +28,8 @@ testing trivial and makes frontend integration straightforward — just call `Ti
 - `Map` — the 10×10 `WorldMap` with all tiles
 - `Factions` — list of all factions (including extinct ones)
 - `Scenario` — current Sandbox or Challenge session, including objectives and action points
+- `History` — bounded 30-day lineage/objective samples
+- `Events` — bounded major ecosystem event log
 
 ---
 
@@ -54,6 +56,7 @@ testing trivial and makes frontend integration straightforward — just call `Ti
 14. `ApplySpeciation` — fork populations that crossed size thresholds into derived species
 15. `State.Tick++` (all calendar values derive from it)
 16. Refresh scenario objectives and resolve an expired challenge
+17. Detect major events and append a history sample every 30 days
 
 **Why this order matters:**
 - Resources are distributed before breeding/deprivation so population change reflects current access
@@ -554,6 +557,20 @@ budgets before spending points.
 
 Objective progress refreshes after every tick and successful action. Challenge status becomes
 `Won` only if all objectives are met when its duration expires; otherwise it becomes `Lost`.
+
+---
+
+## History and major events
+
+`WorldState.History` stores up to 120 `WorldHistorySample` records, sampled every
+`World.HistoryIntervalDays` (30 days). Each sample contains total population by lineage root plus
+normalized objective progress, so speciation remains folded into the parent lineage and challenge
+trends always use "higher is better."
+
+`WorldState.Events` stores up to 200 `WorldEvent` records with tick, severity, message, and optional
+tile coordinates. `World.Tick()` detects extinctions, ≥25%/10-head population swings, migration
+waves, first disease outbreaks, weather transitions, and challenge results. Successful scenario
+actions add located events immediately. Old records are removed from the front of each bounded list.
 
 ---
 

@@ -22,6 +22,7 @@ public partial class SimMain : Node2D
         AddChild(new HUD());
         AddChild(new FactionPanel());
         AddChild(new ScenarioPanel());
+        AddChild(new HistoryPanel());
 
         _panel = new TileInfoPanel();
         AddChild(_panel);
@@ -62,6 +63,9 @@ public partial class SimMain : Node2D
                 break;
             case Key.R:
                 SimManager.Instance.Reset();
+                break;
+            case Key.H:
+                SimManager.Instance.ToggleAnalysis();
                 break;
         }
     }

@@ -32,6 +32,7 @@ public partial class SimManager : Node
     [Signal] public delegate void WorldResetEventHandler();
     [Signal] public delegate void ScenarioChangedEventHandler();
     [Signal] public delegate void ScenarioSelectionRequestedEventHandler();
+    [Signal] public delegate void AnalysisToggleRequestedEventHandler();
 
     public override void _Ready()
     {
@@ -82,6 +83,8 @@ public partial class SimManager : Node
         Paused = true;
         EmitSignal(SignalName.ScenarioSelectionRequested);
     }
+
+    public void ToggleAnalysis() => EmitSignal(SignalName.AnalysisToggleRequested);
 
     public ScenarioActionResult TryApplyScenarioAction(IScenarioAction action)
     {

@@ -71,19 +71,22 @@ public sealed class ScenarioSession
                 "Dinosaur lineages alive",
                 $"{livingDinosaurCount}/{RequiredDinosaurLineages.Length}",
                 $"{RequiredDinosaurLineages.Length}/{RequiredDinosaurLineages.Length}",
-                livingDinosaurCount == RequiredDinosaurLineages.Length),
+                livingDinosaurCount == RequiredDinosaurLineages.Length,
+                livingDinosaurCount / (float)RequiredDinosaurLineages.Length),
             new(
                 "locust-control",
                 "Locust population",
                 locustCount.ToString(),
                 "≤ 500",
-                locustCount <= 500),
+                locustCount <= 500,
+                Math.Clamp(500f / Math.Max(1, locustCount), 0f, 1f)),
             new(
                 "grass-health",
                 "Average plains grass",
                 $"{grassPercent:F0}%",
                 "≥ 25%",
-                grassPercent >= 25f),
+                grassPercent >= 25f,
+                Math.Clamp(grassPercent / 25f, 0f, 1f)),
         ];
 
         ResolveIfExpired(state,
@@ -113,19 +116,22 @@ public sealed class ScenarioSession
                 "Dinosaur lineages alive",
                 $"{livingDinosaurCount}/{RequiredDinosaurLineages.Length}",
                 $"{RequiredDinosaurLineages.Length}/{RequiredDinosaurLineages.Length}",
-                livingDinosaurCount == RequiredDinosaurLineages.Length),
+                livingDinosaurCount == RequiredDinosaurLineages.Length,
+                livingDinosaurCount / (float)RequiredDinosaurLineages.Length),
             new(
                 "freshwater-health",
                 "Average land freshwater",
                 $"{waterPercent:F0}%",
                 "≥ 55%",
-                waterPercent >= 55f),
+                waterPercent >= 55f,
+                Math.Clamp(waterPercent / 55f, 0f, 1f)),
             new(
                 "vegetation-health",
                 "Average land vegetation",
                 $"{vegetationPercent:F0}%",
                 "≥ 50%",
-                vegetationPercent >= 50f),
+                vegetationPercent >= 50f,
+                Math.Clamp(vegetationPercent / 50f, 0f, 1f)),
         ];
     }
 

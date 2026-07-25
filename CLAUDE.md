@@ -14,7 +14,7 @@ Locust Plague, and Drought Recovery modes. Terminal prototype (`SimConsole`) sti
 
 - **Language:** C# 12, .NET 8
 - **Engine layer:** `EcosystemSim` — a class library, zero UI dependencies, engine-agnostic
-- **Tests:** xUnit 3, `EcosystemSim.Tests` — 103 tests, run `dotnet test` from `sim/`
+- **Tests:** xUnit 3, `EcosystemSim.Tests` — 107 tests, run `dotnet test` from `sim/`
 - **Console UI:** `SimConsole` — terminal renderer / prototype; run from `sim/`
 - **Game UI:** Godot 4.7 (.NET), lives in `godot/`; references `EcosystemSim` via ProjectReference
 
@@ -38,6 +38,8 @@ godot/                      # Godot 4.7 game frontend
     ├── FactionPanel.cs     # Left-side panel: faction list, population summaries, relations
     ├── ScenarioPanel.cs    # Challenge timer, AP budget, objectives, and final result
     ├── ScenarioSelectionOverlay.cs # Startup Sandbox/Challenge mode picker
+    ├── HistoryPanel.cs     # Toggleable lineage graph and major-event browser
+    ├── LineageChart.cs     # Custom population-history line renderer
     └── TileInfoPanel.cs    # Right-side tile details and intervention controls
 
 sim/
@@ -62,6 +64,7 @@ sim/
 │   ├── Disease.cs          # Disease blueprint (spread, mortality, recovery rates)
 │   ├── ScenarioSession.cs  # Active mode, objectives, budget, duration, and result
 │   ├── ScenarioFactory.cs  # Scenario setup, outbreak seeding, and drought stress
+│   ├── WorldTelemetry.cs   # Bounded history samples and major ecosystem events
 │   ├── *Action.cs          # Validated, tile-targeted scenario interventions
 │   └── *Command.cs         # IWorldCommand implementations for player interventions
 │
@@ -84,7 +87,7 @@ sim/
 
 ```bash
 cd sim
-dotnet test                        # run all 103 tests
+dotnet test                        # run all 107 tests
 dotnet run --project SimConsole    # terminal prototype
 dotnet run --project EcoReport -c Release   # headless ecology stability report (balance tuning)
 ```
@@ -318,6 +321,16 @@ average land freshwater of at least 55%, and average land vegetation of at least
 create watering holes within three hexes for 2 AP, restore vegetation within three hexes for 2 AP,
 or seed 45 days of global rain for 3 AP. Actions are validated against the active scenario.
 
+### 16. History and ecosystem feedback
+The engine records lineage populations and normalized challenge-objective progress every 30 days,
+keeping the latest 120 samples. It also keeps the latest 200 major events: scenario starts/results,
+interventions, extinctions, large population swings, migration waves, disease outbreaks, and
+weather changes.
+
+Godot exposes this through the `H` analysis panel with per-lineage graphs and a recent-event view.
+The HUD shows the latest event, challenge objectives show improving/steady/worsening trends, and
+tiles with diseased or poorly satisfied populations receive visible warning markers.
+
 ---
 
 ## Tick order (per `World.Tick()`)
@@ -345,6 +358,7 @@ Global:
 14. `ApplyEvolution` — pressure accumulators + threshold crossings
 15. `ApplySpeciation` — fork populations that crossed size thresholds into derived species
 16. `State.Tick++` — season/day/year values derive from elapsed days
+17. Record major events and append a history sample every 30 days
 
 ---
 

@@ -2,6 +2,10 @@ namespace EcosystemSim;
 
 public class World
 {
+    public const int HistoryIntervalDays = 30;
+    public const int MaxHistorySamples = 120;
+    public const int MaxEvents = 200;
+
     public WorldState State { get; } = new();
 
     // Pass a seed to make a run reproducible (same seed → identical tick-by-tick evolution), which is
@@ -20,6 +24,11 @@ public class World
 
     public void Tick()
     {
+        var previousLineages = LineageCounts();
+        var previousWeather = State.CurrentWeather;
+        var previousScenarioStatus = State.Scenario?.Status;
+        var previousInfectedGroups = State.Map.AllPopulations().Count(p => p.Count > 0 && p.Disease is not null);
+
         foreach (var pop in State.Map.AllPopulations())
             pop.JustMigrated = false;
 
@@ -47,11 +56,22 @@ public class World
         State.Tick++;
         State.Scenario?.Refresh(State);
         AdvanceWeather();
+        RecordTickEvents(previousLineages, previousWeather, previousScenarioStatus, previousInfectedGroups);
+        if (State.Tick % HistoryIntervalDays == 0)
+            RecordHistorySample();
     }
 
     public void Apply(IWorldCommand command) => command.Execute(State);
 
-    public ScenarioSession StartScenario(ScenarioKind kind) => ScenarioFactory.Start(State, kind);
+    public ScenarioSession StartScenario(ScenarioKind kind)
+    {
+        var scenario = ScenarioFactory.Start(State, kind);
+        State.History.Clear();
+        State.Events.Clear();
+        AddEvent(WorldEventSeverity.Info, $"Started {scenario.Name}.");
+        RecordHistorySample();
+        return scenario;
+    }
 
     public ScenarioActionResult TryApplyScenarioAction(IScenarioAction action)
     {
@@ -73,8 +93,117 @@ public class World
         if (scenario.IsChallenge)
             scenario.ActionPointsRemaining -= action.Cost;
         scenario.Refresh(State);
+        AddEvent(WorldEventSeverity.Info, message, ActionTileX(action), ActionTileY(action));
         return new(true, message, scenario.ActionPointsRemaining);
     }
+
+    private Dictionary<string, int> LineageCounts() =>
+        State.Map.AllPopulations()
+            .Where(p => p.Count > 0)
+            .GroupBy(p => p.Species.EffectiveRootName)
+            .ToDictionary(g => g.Key, g => g.Sum(p => p.Count));
+
+    private void RecordHistorySample()
+    {
+        var lineageCounts = LineageCounts();
+        if (State.History.LastOrDefault() is { } previousSample)
+        {
+            foreach (var lineage in previousSample.LineagePopulations.Keys)
+                lineageCounts.TryAdd(lineage, 0);
+        }
+        var objectiveProgress = State.Scenario?.Objectives
+            .ToDictionary(o => o.Id, o => o.ProgressRatio)
+            ?? new Dictionary<string, float>();
+        State.History.Add(new WorldHistorySample(State.Tick, lineageCounts, objectiveProgress));
+        if (State.History.Count > MaxHistorySamples)
+            State.History.RemoveAt(0);
+    }
+
+    private void RecordTickEvents(
+        IReadOnlyDictionary<string, int> previousLineages,
+        Weather previousWeather,
+        ScenarioStatus? previousScenarioStatus,
+        int previousInfectedGroups)
+    {
+        var currentLineages = LineageCounts();
+        foreach (var (lineage, previousCount) in previousLineages)
+        {
+            var currentCount = currentLineages.GetValueOrDefault(lineage);
+            if (currentCount == 0)
+            {
+                AddEvent(WorldEventSeverity.Critical, $"{lineage} became extinct.");
+                continue;
+            }
+
+            var change = currentCount - previousCount;
+            if (Math.Abs(change) >= 10 && Math.Abs(change) >= previousCount * 0.25f)
+            {
+                var direction = change > 0 ? "surged" : "fell";
+                AddEvent(WorldEventSeverity.Warning,
+                    $"{lineage} {direction} from {previousCount} to {currentCount}.");
+            }
+        }
+
+        var migrated = State.Map.AllPopulations()
+            .Where(p => p.Count > 0 && p.JustMigrated)
+            .ToList();
+        if (migrated.Count >= 3 || migrated.Any(p => p.Count >= 20))
+            AddEvent(WorldEventSeverity.Info,
+                $"Migration wave reached {migrated.Count} population groups.");
+
+        var infectedGroups = State.Map.AllPopulations().Count(p => p.Count > 0 && p.Disease is not null);
+        if (previousInfectedGroups == 0 && infectedGroups > 0)
+            AddEvent(WorldEventSeverity.Warning,
+                $"Disease outbreak detected in {infectedGroups} population groups.");
+
+        if (State.CurrentWeather != previousWeather)
+            AddEvent(WorldEventSeverity.Info, $"Weather changed to {State.CurrentWeather}.");
+
+        if (previousScenarioStatus == ScenarioStatus.Active
+            && State.Scenario is { Status: not ScenarioStatus.Active } scenario)
+        {
+            AddEvent(
+                scenario.Status == ScenarioStatus.Won
+                    ? WorldEventSeverity.Info
+                    : WorldEventSeverity.Critical,
+                scenario.Status == ScenarioStatus.Won
+                    ? $"{scenario.Name} completed in victory."
+                    : $"{scenario.Name} ended in defeat.");
+        }
+    }
+
+    private void AddEvent(
+        WorldEventSeverity severity,
+        string message,
+        int? tileX = null,
+        int? tileY = null)
+    {
+        State.Events.Add(new WorldEvent(State.Tick, severity, message, tileX, tileY));
+        if (State.Events.Count > MaxEvents)
+            State.Events.RemoveAt(0);
+    }
+
+    private static int? ActionTileX(IScenarioAction action) => action switch
+    {
+        CullLocustsAction a => a.TileX,
+        RestoreGrassAction a => a.TileX,
+        SeedMeganeuraAction a => a.TileX,
+        CreateWateringHolesAction a => a.TileX,
+        RestoreVegetationAction a => a.TileX,
+        SeedRainAction a => a.TileX,
+        _ => null,
+    };
+
+    private static int? ActionTileY(IScenarioAction action) => action switch
+    {
+        CullLocustsAction a => a.TileY,
+        RestoreGrassAction a => a.TileY,
+        SeedMeganeuraAction a => a.TileY,
+        CreateWateringHolesAction a => a.TileY,
+        RestoreVegetationAction a => a.TileY,
+        SeedRainAction a => a.TileY,
+        _ => null,
+    };
 
     public const int DaysPerSeason = 90;
     public const int DaysPerYear = DaysPerSeason * 4;

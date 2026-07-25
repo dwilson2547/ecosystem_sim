@@ -5,4 +5,5 @@ public sealed record ScenarioObjectiveProgress(
     string Label,
     string CurrentValue,
     string TargetValue,
-    bool IsMet);
+    bool IsMet,
+    float ProgressRatio);

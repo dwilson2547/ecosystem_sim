@@ -16,6 +16,7 @@ public partial class HexTile : Node2D
     private Polygon2D _bg     = null!;
     private Line2D    _border = null!;
     private Label     _label  = null!;
+    private Label     _warning = null!;
 
     // species with map icon art — sized so ~5 fit on a single hex tile. Add an entry here (and
     // a processed PNG in assets/sprites/) to give another species its own map icon.
@@ -92,6 +93,16 @@ public partial class HexTile : Node2D
         _label.AddThemeFontSizeOverride("font_size", (int)(HexSize * 0.28f));
         AddChild(_label);
 
+        _warning = new Label
+        {
+            Text = "!",
+            Position = new Vector2(-HexSize * 0.42f, -HexSize * 0.55f),
+            MouseFilter = Control.MouseFilterEnum.Ignore,
+            Visible = false,
+        };
+        _warning.AddThemeFontSizeOverride("font_size", (int)(HexSize * 0.32f));
+        AddChild(_warning);
+
         for (var i = 0; i < MaxSpeciesIcons; i++)
         {
             var sprite = new Sprite2D { Visible = false };
@@ -119,8 +130,24 @@ public partial class HexTile : Node2D
         if (fert?.Amount > 40f)
             _bg.Color = _bg.Color.Lerp(new Color(0.1f, 0.6f, 0.1f), 0.15f);
 
-        var dominant = SimTile.Populations
-            .Where(p => p.Count > 0)
+        var living = SimTile.Populations.Where(p => p.Count > 0).ToList();
+        var diseased = living.Any(p => p.Disease is not null);
+        var lowestSatisfaction = living.Count == 0 ? 1f : living.Min(p => p.LastSatisfaction);
+        _warning.Visible = diseased || lowestSatisfaction < 0.6f;
+        if (_warning.Visible)
+        {
+            var critical = diseased || lowestSatisfaction < 0.3f;
+            var color = critical
+                ? new Color(1f, 0.2f, 0.2f)
+                : new Color(1f, 0.7f, 0.15f);
+            _warning.AddThemeColorOverride("font_color", color);
+            _warning.TooltipText = diseased
+                ? "Disease detected on this tile."
+                : $"Population satisfaction is {lowestSatisfaction * 100f:F0}%.";
+            _bg.Color = _bg.Color.Lerp(color, critical ? 0.28f : 0.16f);
+        }
+
+        var dominant = living
             .OrderByDescending(p => p.Count)
             .FirstOrDefault();
 

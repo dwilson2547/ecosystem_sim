@@ -238,6 +238,81 @@ public class ScenarioTests
         Assert.Equal(World.DaysPerSeason, world.State.WeatherTicksRemaining);
     }
 
+    [Fact]
+    public void StartScenario_InitializesHistoryAndStartEvent()
+    {
+        var world = CreateScenarioWorld();
+
+        world.StartScenario(ScenarioKind.LocustPlague);
+
+        var sample = Assert.Single(world.State.History);
+        Assert.Equal(0, sample.Tick);
+        Assert.Equal(504, sample.LineagePopulations["Locust"]);
+        Assert.Contains("locust-control", sample.ObjectiveProgress.Keys);
+        Assert.Contains(world.State.Events, e => e.Message == "Started Locust Plague.");
+    }
+
+    [Fact]
+    public void Tick_RecordsMonthlyPopulationAndObjectiveHistory()
+    {
+        var world = CreateScenarioWorld();
+        world.StartScenario(ScenarioKind.LocustPlague);
+
+        for (var day = 0; day < World.HistoryIntervalDays; day++)
+            world.Tick();
+
+        Assert.Equal(2, world.State.History.Count);
+        Assert.Equal(World.HistoryIntervalDays, world.State.History[^1].Tick);
+        Assert.Contains("dinosaur-survival", world.State.History[^1].ObjectiveProgress.Keys);
+    }
+
+    [Fact]
+    public void ScenarioAction_AddsLocatedWorldEvent()
+    {
+        var world = CreateScenarioWorld();
+        world.StartScenario(ScenarioKind.LocustPlague);
+        var tile = world.State.Map.AllTiles().First(t =>
+            t.Populations.Any(p => p.Count > 0 && p.Species.EffectiveRootName == "Locust"));
+
+        world.TryApplyScenarioAction(new CullLocustsAction { TileX = tile.X, TileY = tile.Y });
+
+        var worldEvent = world.State.Events.Last();
+        Assert.Equal(tile.X, worldEvent.TileX);
+        Assert.Equal(tile.Y, worldEvent.TileY);
+        Assert.Contains("Culled", worldEvent.Message);
+    }
+
+    [Fact]
+    public void Tick_RecordsLineageExtinctionAsCriticalEvent()
+    {
+        var world = new World(1, 1, seed: 42);
+        var species = new SpeciesDefinition
+        {
+            Name = "Fragile Lineage",
+            RootName = "Fragile Lineage",
+            FoodConsumptionRate = 1f,
+            BreedingRate = 0f,
+            FoodDeprivationToleranceDays = 0,
+            FoodDeprivationMortalityRate = 1f,
+            MigrationThreshold = 0f,
+        };
+        world.State.Map.GetTile(0, 0).AddPopulation(new Population
+        {
+            Species = species,
+            Count = 1,
+        });
+        world.StartScenario(ScenarioKind.Sandbox);
+
+        world.Tick();
+
+        Assert.Contains(world.State.Events, e =>
+            e.Severity == WorldEventSeverity.Critical
+            && e.Message == "Fragile Lineage became extinct.");
+        for (var day = 1; day < World.HistoryIntervalDays; day++)
+            world.Tick();
+        Assert.Equal(0, world.State.History[^1].LineagePopulations["Fragile Lineage"]);
+    }
+
     private static World CreateScenarioWorld()
     {
         var world = new World(10, 10, seed: 42);

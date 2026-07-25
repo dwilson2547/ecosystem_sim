@@ -14,6 +14,7 @@ public partial class HUD : CanvasLayer
     private Label _weatherLabel = null!;
     private Label _yearLabel    = null!;
     private Label _speedLabel   = null!;
+    private Label _eventLabel   = null!;
 
     public override void _Ready()
     {
@@ -32,13 +33,15 @@ public partial class HUD : CanvasLayer
         _weatherLabel = MakeLabel();
         _yearLabel    = MakeLabel();
         _speedLabel   = MakeLabel();
+        _eventLabel   = MakeLabel();
+        _eventLabel.CustomMinimumSize = new Vector2(280f, 0f);
 
-        foreach (var lbl in new[] { _tickLabel, _seasonLabel, _weatherLabel, _yearLabel, _speedLabel })
+        foreach (var lbl in new[] { _tickLabel, _seasonLabel, _weatherLabel, _yearLabel, _speedLabel, _eventLabel })
             vbox.AddChild(lbl);
 
         var hint = new Label
         {
-            Text        = "Space=pause  +/-=speed  R=restart  MMB=pan  Wheel=zoom  LClick=inspect",
+            Text        = "Space=pause  +/-=speed  R=restart  H=analysis  MMB=pan  Wheel=zoom  LClick=inspect",
             MouseFilter = Control.MouseFilterEnum.Ignore,
         };
         hint.AddThemeColorOverride("font_color", new Color(0.7f, 0.7f, 0.7f));
@@ -51,6 +54,10 @@ public partial class HUD : CanvasLayer
         var scenarioBtn = new Button { Text = "Choose scenario" };
         scenarioBtn.Pressed += SimManager.Instance.RequestScenarioSelection;
         vbox.AddChild(scenarioBtn);
+
+        var analysisBtn = new Button { Text = "History & events [H]" };
+        analysisBtn.Pressed += SimManager.Instance.ToggleAnalysis;
+        vbox.AddChild(analysisBtn);
 
         SimManager.Instance.Ticked        += Refresh;
         SimManager.Instance.PausedChanged += OnPausedChanged;
@@ -70,6 +77,16 @@ public partial class HUD : CanvasLayer
         _weatherLabel.Text = WeatherText(state.CurrentWeather);
         _weatherLabel.AddThemeColorOverride("font_color", WeatherColor(state.CurrentWeather));
         _speedLabel.Text  = $"{sim.TickInterval:F2}s / tick";
+        var latestEvent = state.Events.LastOrDefault();
+        var eventText = latestEvent?.Message ?? "none yet";
+        if (eventText.Length > 58) eventText = eventText[..55] + "...";
+        _eventLabel.Text = $"Event: {eventText}";
+        _eventLabel.AddThemeColorOverride("font_color", latestEvent?.Severity switch
+        {
+            WorldEventSeverity.Critical => new Color(1f, 0.35f, 0.35f),
+            WorldEventSeverity.Warning => new Color(1f, 0.7f, 0.25f),
+            _ => new Color(0.7f, 0.8f, 0.9f),
+        });
     }
 
     private void OnPausedChanged(bool paused)
