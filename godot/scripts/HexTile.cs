@@ -1,6 +1,7 @@
 using Godot;
 using EcosystemSim;
 using System.Linq;
+using System.Runtime.CompilerServices;
 
 namespace EcosystemGame;
 
@@ -24,28 +25,52 @@ public partial class HexTile : Node2D
     private const float IconSpacing      = 22f;
     private const int   CountPerIcon     = 20; // individuals represented by each icon, capped at MaxSpeciesIcons
 
-    private static readonly Dictionary<string, string> IconPaths = new()
+    // most species have one icon; a species can list several variants and each population will
+    // stick to one, chosen at random the first time it's drawn (see IconFor below).
+    private static readonly Dictionary<string, string[]> IconPaths = new()
     {
-        ["Alamosaurus"] = "res://assets/sprites/alamosaurus.png",
-        ["Triceratops"] = "res://assets/sprites/triceratops.png",
-        ["Megalodon"]   = "res://assets/sprites/megalodon.png",
+        ["Alamosaurus"]   = ["res://assets/sprites/alamosaurus.png"],
+        ["Triceratops"]   = ["res://assets/sprites/triceratops.png"],
+        ["Megalodon"]     = ["res://assets/sprites/megalodon.png"],
+        ["Tyrannosaurus"] =
+        [
+            "res://assets/sprites/trex_01_olive_ambush.png",
+            "res://assets/sprites/trex_02_rust_savannah.png",
+            "res://assets/sprites/trex_03_slate_forest.png",
+            "res://assets/sprites/trex_04_scarlet_macaw.png",
+            "res://assets/sprites/trex_05_rainbow_lorikeet.png",
+            "res://assets/sprites/trex_06_peacock.png",
+        ],
     };
 
     // per-species icon size multiplier (default 1). The Megalodon is a singleton apex, so it's
-    // drawn oversized to stand out from the herds around it.
+    // drawn oversized to stand out from the herds around it; the Tyrannosaurus is the land
+    // equivalent — not a singleton, but still the apex predator, so it gets a similar bump.
     private static readonly Dictionary<string, float> IconScales = new()
     {
-        ["Megalodon"] = 2.5f,
+        ["Megalodon"]     = 2.5f,
+        ["Tyrannosaurus"] = 2.0f,
     };
 
-    private static readonly Dictionary<string, Texture2D> _iconCache = new();
+    private static readonly Dictionary<string, Texture2D[]> _iconCache = new();
 
-    private static Texture2D? IconFor(string rootName)
+    // one variant picked per Population instance, kept for the population's lifetime instead of
+    // re-rolling every Refresh(). ConditionalWeakTable so extinct/forked pops (which stick around
+    // per the "dead pops stay on tile" invariant) don't leak entries forever.
+    private static readonly ConditionalWeakTable<Population, Texture2D> _iconVariantByPopulation = new();
+    private static readonly Random _iconVariantRng = new();
+
+    private static Texture2D? IconFor(Population population)
     {
-        if (!IconPaths.TryGetValue(rootName, out var path)) return null;
-        if (!_iconCache.TryGetValue(rootName, out var tex))
-            _iconCache[rootName] = tex = GD.Load<Texture2D>(path);
-        return tex;
+        var rootName = population.Species.EffectiveRootName;
+        if (!IconPaths.TryGetValue(rootName, out var paths)) return null;
+
+        if (!_iconCache.TryGetValue(rootName, out var textures))
+            _iconCache[rootName] = textures = paths.Select(GD.Load<Texture2D>).ToArray();
+
+        if (textures.Length == 1) return textures[0];
+
+        return _iconVariantByPopulation.GetValue(population, _ => textures[_iconVariantRng.Next(textures.Length)]);
     }
 
     // 1-5 icon cluster layouts (offsets from tile center), a 3-over-2 pentagon pattern at 5
@@ -126,7 +151,7 @@ public partial class HexTile : Node2D
 
         // species with icon art render as a repeated icon (quantity = icon count) instead of
         // text; every other species keeps the letter+count label until they get their own art
-        var icon = dominant is not null ? IconFor(dominant.Species.EffectiveRootName) : null;
+        var icon = dominant is not null ? IconFor(dominant) : null;
 
         if (icon is not null)
         {
