@@ -182,6 +182,7 @@ Sections shown (each separated by a divider):
 - **Header** — `(col, row)  TerrainType`
 - **Resources** — per resource: `Type  amount/capacity (%)  +regen/tick`
 - **Fertilizer** — shown if > 1 unit: `Fertilizer  amount`
+- **Succession** — active degradation or recovery pressure and its configured trigger duration
 - **Interventions** — scenario-specific actions. Locust Plague offers culling, grass restoration,
   and Meganeura seeding; Drought Recovery offers watering holes, vegetation restoration, and rain
   seeding. Sandbox offers both sets for free. Invalid actions are disabled with an inline reason,
@@ -228,7 +229,7 @@ discovers lineages from the live world, shows a selectable 30-day population gra
 start/current/min/max/change. Before two samples exist, it explains the sampling interval.
 
 **Events** shows the latest 12 major engine events with year/day, severity color, and tile coordinates
-for interventions. The HUD mirrors the newest event in compact form. Challenge objective rows compare
+for interventions and terrain transitions. The HUD mirrors the newest event in compact form. Challenge objective rows compare
 the latest two history samples and show `improving`, `steady`, or `worsening`.
 
 ## What's not yet in the UI

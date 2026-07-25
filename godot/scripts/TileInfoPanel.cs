@@ -104,6 +104,19 @@ public partial class TileInfoPanel : CanvasLayer
             Sep();
         }
 
+        var succession = SimManager.Instance.World.SuccessionSettings;
+        if (_tile.DegradationPressure > 0f || _tile.RecoveryPressure > 0f)
+        {
+            Row("Succession", color: new Color(0.75f, 0.9f, 0.55f));
+            if (_tile.DegradationPressure > 0f)
+                Row($"  Degradation pressure  {_tile.DegradationPressure:F0}/{succession.DegradationPressureDays}",
+                    color: new Color(1f, 0.65f, 0.3f));
+            if (_tile.RecoveryPressure > 0f)
+                Row($"  Recovery pressure  {_tile.RecoveryPressure:F0}/{succession.RecoveryPressureDays}",
+                    color: new Color(0.45f, 1f, 0.45f));
+            Sep();
+        }
+
         BuildInterventions();
 
         // living populations

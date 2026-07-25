@@ -70,15 +70,20 @@ public static class TerrainStats
         [TerrainType.River]    = new FloatRange(100, 100),
     };
 
-    // a terrain whose defining food subtype stays depleted long enough degrades into a lesser terrain.
-    // Forest → Plains when Fruit (canopy) stays below 10% of capacity for 60 sustained ticks.
+    // A terrain whose defining food subtype stays depleted long enough degrades into a lesser terrain.
+    // Thresholds, pressure duration, and seeded transition chance live in TerrainSuccessionSettings.
     public static readonly Dictionary<TerrainType, (FoodSubtype TriggerSubtype, TerrainType DegradesTo)> Degradation = new()
     {
         [TerrainType.Forest] = (FoodSubtype.Fruit, TerrainType.Plains),
     };
 
-    // builds a fresh set of Food + Water resource pools for a terrain, sampling FoodComposition
-    // and water-percentage ranges. Used at world-seed time and when terrain degrades at runtime.
+    // Recovery requires healthy vegetation, fertilizer, and a neighboring seed-source terrain.
+    public static readonly Dictionary<TerrainType, TerrainType> Recovery = new()
+    {
+        [TerrainType.Plains] = TerrainType.Forest,
+    };
+
+    // Builds fresh Food + Water pools for world seeding and runtime terrain transitions.
     public static List<ResourcePool> BuildResourcePools(TerrainType terrain, Random random)
     {
         var pools = new List<ResourcePool>();

@@ -43,8 +43,8 @@ testing trivial and makes frontend integration straightforward — just call `Ti
 5. `ApplyWaterExposure` — drowning losses for populations stranded on River terrain
 6. `ProduceByproducts` — each individual emits byproducts at species rate
 7. `DecayByproducts` — byproduct pools decay 10%/tick
-8. `ApplyTerrainDegradation` — converts terrain (e.g. Forest → Plains) if its defining food
-   subtype has stayed denuded long enough
+8. `ApplyTerrainSuccession` — accumulates degradation/recovery pressure and performs eligible,
+   seeded terrain transitions
 
 **Global** (after all tiles processed):
 8. `Migrate` — batch-compute all moves, then apply
@@ -121,9 +121,8 @@ groups are unaffected; the penalty only bites once a tile gets crowded. Constant
 
 ## Terrain
 
-Eight terrain types set on `Tile.Terrain` during world creation. Static at the individual-tile
-level (a Plains tile's baseline stays Plains) but no longer immutable overall — see **Terrain
-degradation** below. Land and ocean are biome-separated: species cannot migrate across the
+Eight terrain types are set on `Tile.Terrain` during world creation and can later change through
+configured ecological succession. Land and ocean are biome-separated: species cannot migrate across the
 land/ocean boundary (enforced in `BestNeighborByValue` via `TerrainStats.IsOcean()`).
 
 | Terrain      | Total food regen | Water            | Migration cost |
@@ -156,25 +155,30 @@ independently per tile at world-seed time then normalized to sum to 100%:
 `waterRegen = 15 × pct/100`, `waterCapacity = 200 × pct/100`. Ocean tiles carry no Water pool.
 
 Both `WorldSeeder` and `DemoWorldSeeder` build every tile's resource pools with a single shared
-call, `TerrainStats.BuildResourcePools(terrain, random)` — this is also what
-`World.ApplyTerrainDegradation` calls at runtime, so a degraded tile gets pools structurally
-identical to one seeded that way from the start.
+call, `TerrainStats.BuildResourcePools(terrain, random)` — this is also what terrain succession
+calls at runtime, so a transitioned tile gets pools structurally identical to one seeded that way
+from the start.
 
 Migration cost is used as a **tiebreaker** in `BestNeighborByValue` — when multiple neighbors
 have similar value, prefer the one with lower entry cost.
 
-**Terrain degradation.** `TerrainStats.Degradation` maps a terrain to `(TriggerSubtype,
-DegradesTo)` — currently only `Forest → (FoodSubtype.Fruit, Plains)`. Each tick,
-`ApplyTerrainDegradation` checks the trigger pool's `Amount / Capacity`:
+**Terrain succession.** `TerrainStats.Degradation` maps Forest to Plains, while
+`TerrainStats.Recovery` maps Plains back to Forest. `ApplyTerrainSuccession` uses
+`TerrainSuccessionSettings` for every threshold, pressure duration, chance, and decay rate.
+The defaults are:
 ```
-if ratio < 0.06: tile.DegradationPressure++
-else:            tile.DegradationPressure = max(0, pressure - 1)
-if pressure >= 90: tile.Terrain = Plains; rebuild pools; pressure = 0
+Forest → Plains:
+  Fruit ratio < 6% for 90 pressure days; 100% daily chance once eligible
+
+Plains → Forest:
+  average vegetation ≥ 50%, fertilizer ≥ 5, and an adjacent Forest
+  for 30 pressure days; 10% daily chance once eligible
 ```
-Fruit (canopy-equivalent food) sustained below 6% capacity for ~90 ticks converts the Forest to
-Plains permanently. The tile's composition is rebuilt fresh from the Plains distribution — the old
-Forest pool set is discarded. Same pressure-accumulator shape as `WaterExposure`/`SizePressure`:
-sustained denudation, not a single bad tick, triggers conversion.
+Unhealthy days decay the relevant pressure by one rather than resetting it immediately. A
+transition rebuilds the tile's resource pools, resets both pressure values, and records a located
+world event. Chance rolls and rebuilt resource compositions use the world's seeded RNG, preserving
+reproducible runs. Recovery requires nearby Forest, so woodland spreads from surviving seed sources
+rather than appearing spontaneously.
 
 These thresholds were relaxed from the original 10%/60 ticks. With predation alone (Tyrannosaurus +
 Para curb) the land ecosystem is **bistable**: strong predation saves the forest but exterminates the

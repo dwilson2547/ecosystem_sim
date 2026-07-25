@@ -7,16 +7,28 @@ public class World
     public const int MaxEvents = 200;
 
     public WorldState State { get; } = new();
+    public TerrainSuccessionSettings SuccessionSettings { get; }
 
     // Pass a seed to make a run reproducible (same seed → identical tick-by-tick evolution), which is
     // what lets balance tuning hold the RNG fixed while changing one parameter. Omit it (null) for the
     // old behaviour: a fresh time-based Random, so every run diverges. Note the *demo world* also seeds
     // resource pools in its seeder — pass the same seed there too for a fully reproducible world.
     public World() : this((int?)null) { }
-    public World(int? seed) { _random = NewRandom(seed); }
-    public World(int width, int height, int? seed = null)
+    public World(int? seed, TerrainSuccessionSettings? successionSettings = null)
+    {
+        SuccessionSettings = successionSettings ?? new TerrainSuccessionSettings();
+        SuccessionSettings.Validate();
+        _random = NewRandom(seed);
+    }
+    public World(
+        int width,
+        int height,
+        int? seed = null,
+        TerrainSuccessionSettings? successionSettings = null)
     {
         State   = new WorldState { Map = new WorldMap(width, height) };
+        SuccessionSettings = successionSettings ?? new TerrainSuccessionSettings();
+        SuccessionSettings.Validate();
         _random = NewRandom(seed);
     }
 
@@ -40,7 +52,7 @@ public class World
             ApplyWaterExposure(tile);
             ProduceByproducts(tile);
             DecayByproducts(tile);
-            ApplyTerrainDegradation(tile);
+            ApplyTerrainSuccession(tile);
         }
 
         Migrate();
@@ -322,31 +334,77 @@ public class World
             pool.Decay();
     }
 
-    // ── terrain degradation ───────────────────────────────────────────────────
-
-    private const float DegradationThresholdRatio = 0.06f;
-    private const float DegradationPressureTarget = 90f;
+    // ── terrain succession ────────────────────────────────────────────────────
 
     private readonly Random _random;
 
-    private void ApplyTerrainDegradation(Tile tile)
+    private void ApplyTerrainSuccession(Tile tile)
     {
-        if (!TerrainStats.Degradation.TryGetValue(tile.Terrain, out var rule)) return;
+        if (TerrainStats.Degradation.TryGetValue(tile.Terrain, out var degradation))
+        {
+            var pool = tile.Resources.FirstOrDefault(r =>
+                r.Type == ResourceType.Food && r.FoodSubtype == degradation.TriggerSubtype);
+            var ratio = pool is { Capacity: > 0 } ? pool.Amount / pool.Capacity : 0f;
+            tile.DegradationPressure = ratio < SuccessionSettings.DegradationThresholdRatio
+                ? Math.Min(
+                    SuccessionSettings.DegradationPressureDays,
+                    tile.DegradationPressure + 1f)
+                : Math.Max(0f, tile.DegradationPressure - SuccessionSettings.PressureDecayPerDay);
 
-        var pool  = tile.Resources.FirstOrDefault(r => r.Type == ResourceType.Food && r.FoodSubtype == rule.TriggerSubtype);
-        var ratio = pool is { Capacity: > 0 } ? pool.Amount / pool.Capacity : 0f;
+            if (tile.DegradationPressure >= SuccessionSettings.DegradationPressureDays
+                && TransitionRoll(SuccessionSettings.DegradationDailyChance))
+            {
+                TransitionTerrain(tile, degradation.DegradesTo, WorldEventSeverity.Warning);
+            }
+            return;
+        }
 
-        if (ratio < DegradationThresholdRatio)
-            tile.DegradationPressure++;
-        else
-            tile.DegradationPressure = Math.Max(0f, tile.DegradationPressure - 1f);
+        if (!TerrainStats.Recovery.TryGetValue(tile.Terrain, out var recoversTo)) return;
 
-        if (tile.DegradationPressure < DegradationPressureTarget) return;
+        var vegetationPools = tile.Resources
+            .Where(r => r.Type == ResourceType.Food && r.Capacity > 0f)
+            .ToList();
+        var vegetationRatio = vegetationPools.Count == 0
+            ? 0f
+            : vegetationPools.Average(r => r.Amount / r.Capacity);
+        var fertilizer = tile.Byproducts
+            .FirstOrDefault(b => b.Type == ByproductType.Fertilizer)?.Amount ?? 0f;
+        var hasSeedSource = State.Map.GetNeighbors(tile).Any(n => n.Terrain == recoversTo);
+        var recoveryReady = vegetationRatio >= SuccessionSettings.RecoveryVegetationRatio
+                         && fertilizer >= SuccessionSettings.RecoveryFertilizerAmount
+                         && hasSeedSource;
 
-        tile.Terrain = rule.DegradesTo;
+        tile.RecoveryPressure = recoveryReady
+            ? Math.Min(
+                SuccessionSettings.RecoveryPressureDays,
+                tile.RecoveryPressure + 1f)
+            : Math.Max(0f, tile.RecoveryPressure - SuccessionSettings.PressureDecayPerDay);
+
+        if (tile.RecoveryPressure >= SuccessionSettings.RecoveryPressureDays
+            && TransitionRoll(SuccessionSettings.RecoveryDailyChance))
+        {
+            TransitionTerrain(tile, recoversTo, WorldEventSeverity.Info);
+        }
+    }
+
+    private bool TransitionRoll(float chance) =>
+        chance >= 1f || (chance > 0f && _random.NextDouble() < chance);
+
+    private void TransitionTerrain(
+        Tile tile,
+        TerrainType newTerrain,
+        WorldEventSeverity severity)
+    {
+        var oldTerrain = tile.Terrain;
+        tile.Terrain = newTerrain;
         tile.Resources.Clear();
-        tile.Resources.AddRange(TerrainStats.BuildResourcePools(rule.DegradesTo, _random));
+        tile.Resources.AddRange(TerrainStats.BuildResourcePools(newTerrain, _random));
         tile.DegradationPressure = 0f;
+        tile.RecoveryPressure = 0f;
+        AddEvent(severity,
+            $"Terrain changed from {oldTerrain} to {newTerrain}.",
+            tile.X,
+            tile.Y);
     }
 
     // ── resource distribution ─────────────────────────────────────────────────

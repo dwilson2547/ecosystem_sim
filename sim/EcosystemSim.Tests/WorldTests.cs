@@ -1682,6 +1682,184 @@ public class WorldTests
         Assert.Equal(TerrainType.Forest, tile.Terrain);
     }
 
+    [Fact]
+    public void Tick_HealthyFertilizedPlainsRecoversToForestBesideSeedSource()
+    {
+        var settings = new TerrainSuccessionSettings
+        {
+            RecoveryPressureDays = 3,
+            RecoveryDailyChance = 1f,
+        };
+        var world = new World(2, 1, seed: 42, successionSettings: settings);
+        var seedSource = world.State.Map.GetTile(0, 0);
+        seedSource.Terrain = TerrainType.Forest;
+        seedSource.Resources.Add(new ResourcePool
+        {
+            Type = ResourceType.Food,
+            FoodSubtype = FoodSubtype.Fruit,
+            Amount = 100f,
+            Capacity = 100f,
+            RegenPerTick = 0f,
+        });
+        var recovering = world.State.Map.GetTile(1, 0);
+        recovering.Terrain = TerrainType.Plains;
+        recovering.Resources.Add(new ResourcePool
+        {
+            Type = ResourceType.Food,
+            FoodSubtype = FoodSubtype.Graze,
+            Amount = 100f,
+            Capacity = 100f,
+            RegenPerTick = 0f,
+        });
+        recovering.GetOrAddByproduct(ByproductType.Fertilizer, decayRate: 0f).Amount = 100f;
+
+        for (var day = 0; day < settings.RecoveryPressureDays; day++)
+            world.Tick();
+
+        Assert.Equal(TerrainType.Forest, recovering.Terrain);
+        Assert.Contains(world.State.Events, e =>
+            e.Message == "Terrain changed from Plains to Forest."
+            && e.TileX == recovering.X
+            && e.TileY == recovering.Y);
+    }
+
+    [Theory]
+    [InlineData(false, true, true)]
+    [InlineData(true, false, true)]
+    [InlineData(true, true, false)]
+    public void Tick_PlainsDoesNotRecoverWithoutEveryPrerequisite(
+        bool healthyVegetation,
+        bool enoughFertilizer,
+        bool neighboringForest)
+    {
+        var settings = new TerrainSuccessionSettings
+        {
+            RecoveryPressureDays = 2,
+            RecoveryDailyChance = 1f,
+        };
+        var world = new World(2, 1, seed: 42, successionSettings: settings);
+        world.State.Map.GetTile(1, 0).Terrain = neighboringForest
+            ? TerrainType.Forest
+            : TerrainType.Plains;
+        var tile = world.State.Map.GetTile(0, 0);
+        tile.Terrain = TerrainType.Plains;
+        tile.Resources.Add(new ResourcePool
+        {
+            Type = ResourceType.Food,
+            FoodSubtype = FoodSubtype.Graze,
+            Amount = healthyVegetation ? 100f : 0f,
+            Capacity = 100f,
+            RegenPerTick = 0f,
+        });
+        tile.GetOrAddByproduct(ByproductType.Fertilizer, decayRate: 0f).Amount =
+            enoughFertilizer ? 100f : 0f;
+
+        for (var day = 0; day < 10; day++)
+            world.Tick();
+
+        Assert.Equal(TerrainType.Plains, tile.Terrain);
+        Assert.Equal(0f, tile.RecoveryPressure);
+    }
+
+    [Fact]
+    public void Tick_ZeroTransitionChancePreventsEligibleDegradation()
+    {
+        var settings = new TerrainSuccessionSettings
+        {
+            DegradationPressureDays = 1,
+            DegradationDailyChance = 0f,
+        };
+        var world = new World(1, 1, seed: 42, successionSettings: settings);
+        var tile = world.State.Map.GetTile(0, 0);
+        tile.Terrain = TerrainType.Forest;
+        tile.Resources.Add(new ResourcePool
+        {
+            Type = ResourceType.Food,
+            FoodSubtype = FoodSubtype.Fruit,
+            Amount = 0f,
+            Capacity = 100f,
+            RegenPerTick = 0f,
+        });
+
+        for (var day = 0; day < 10; day++)
+            world.Tick();
+
+        Assert.Equal(TerrainType.Forest, tile.Terrain);
+        Assert.Equal(settings.DegradationPressureDays, tile.DegradationPressure);
+    }
+
+    [Fact]
+    public void Tick_HealthyForestDecaysAccumulatedDegradationPressure()
+    {
+        var settings = new TerrainSuccessionSettings { PressureDecayPerDay = 2.5f };
+        var world = new World(1, 1, seed: 42, successionSettings: settings);
+        var tile = world.State.Map.GetTile(0, 0);
+        tile.Terrain = TerrainType.Forest;
+        tile.DegradationPressure = 10f;
+        tile.Resources.Add(new ResourcePool
+        {
+            Type = ResourceType.Food,
+            FoodSubtype = FoodSubtype.Fruit,
+            Amount = 100f,
+            Capacity = 100f,
+            RegenPerTick = 0f,
+        });
+
+        world.Tick();
+
+        Assert.Equal(7.5f, tile.DegradationPressure);
+    }
+
+    [Fact]
+    public void Tick_SameSeedReproducesStochasticRecoveryTiming()
+    {
+        int RecoveryDay(int seed)
+        {
+            var settings = new TerrainSuccessionSettings
+            {
+                RecoveryPressureDays = 1,
+                RecoveryDailyChance = 0.2f,
+            };
+            var world = new World(2, 1, seed: seed, successionSettings: settings);
+            world.State.Map.GetTile(0, 0).Terrain = TerrainType.Forest;
+            var tile = world.State.Map.GetTile(1, 0);
+            tile.Terrain = TerrainType.Plains;
+            tile.Resources.Add(new ResourcePool
+            {
+                Type = ResourceType.Food,
+                FoodSubtype = FoodSubtype.Graze,
+                Amount = 100f,
+                Capacity = 100f,
+                RegenPerTick = 0f,
+            });
+            tile.GetOrAddByproduct(ByproductType.Fertilizer, decayRate: 0f).Amount = 100f;
+
+            for (var day = 1; day <= 100; day++)
+            {
+                world.Tick();
+                if (tile.Terrain == TerrainType.Forest)
+                    return day;
+            }
+
+            return -1;
+        }
+
+        var first = RecoveryDay(8675309);
+        var second = RecoveryDay(8675309);
+
+        Assert.True(first > 0);
+        Assert.Equal(first, second);
+    }
+
+    [Fact]
+    public void World_RejectsInvalidSuccessionSettings()
+    {
+        var settings = new TerrainSuccessionSettings { RecoveryDailyChance = 1.1f };
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new World(seed: 42, successionSettings: settings));
+    }
+
     // ── Predation / carnivore tests ──────────────────────────────────────────
 
     private static SpeciesDefinition PredatorSpecies(

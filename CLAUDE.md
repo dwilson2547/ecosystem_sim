@@ -14,7 +14,7 @@ Locust Plague, and Drought Recovery modes. Terminal prototype (`SimConsole`) sti
 
 - **Language:** C# 12, .NET 8
 - **Engine layer:** `EcosystemSim` — a class library, zero UI dependencies, engine-agnostic
-- **Tests:** xUnit 3, `EcosystemSim.Tests` — 107 tests, run `dotnet test` from `sim/`
+- **Tests:** xUnit 3, `EcosystemSim.Tests` — 115 tests, run `dotnet test` from `sim/`
 - **Console UI:** `SimConsole` — terminal renderer / prototype; run from `sim/`
 - **Game UI:** Godot 4.7 (.NET), lives in `godot/`; references `EcosystemSim` via ProjectReference
 
@@ -58,7 +58,8 @@ sim/
 │   ├── FoodSubtype.cs      # Enum: Graze/Browse/Fruit/Roots/Fish/Shrimp/Crustacean/Squid/Whale
 │   ├── PreyCategory.cs     # Enum: SmallHerbivore/LargeHerbivore/SmallMarine/LargeMarine/Insect
 │   ├── ByproductType.cs    # Enum: Fertilizer
-│   ├── TerrainType.cs      # Enum: Plains/Forest/Swamp/Desert/Highland/River/ShallowOcean/DeepOcean
+│   ├── TerrainType.cs      # Terrain definitions, resource compositions, and succession maps
+│   ├── TerrainSuccessionSettings.cs # Configurable degradation/recovery thresholds and rates
 │   ├── Season.cs           # Enum: Spring/Summer/Autumn/Winter
 │   ├── Weather.cs          # Enum: Normal/Rainy/Drought (world-level regen modifier over seasons)
 │   ├── Disease.cs          # Disease blueprint (spread, mortality, recovery rates)
@@ -87,7 +88,7 @@ sim/
 
 ```bash
 cd sim
-dotnet test                        # run all 107 tests
+dotnet test                        # run all 115 tests
 dotnet run --project SimConsole    # terminal prototype
 dotnet run --project EcoReport -c Release   # headless ecology stability report (balance tuning)
 ```
@@ -122,10 +123,12 @@ resources are similar (Swamp=1.8×; Desert=0.8×). See `TerrainType.cs` and `doc
 Water is present on every non-ocean terrain, scaled off River as the "full water" reference tile:
 Desert 0-5%, Highland ~5%, Plains/Forest ~10%, Swamp ~15%, River 100%.
 
-Terrain isn't fully static: **`TerrainStats.Degradation`** maps a terrain to a `(TriggerSubtype,
-DegradesTo)` pair — currently only `Forest → Plains` when `FoodSubtype.Fruit` stays below 6% of
-capacity for 90 sustained ticks (`Tile.DegradationPressure`, `World.ApplyTerrainDegradation`).
-Sustained heavy browsing by Alamosaurus herds can permanently clear a forest into grassland.
+Terrain changes through configurable **succession**. `TerrainStats.Degradation` currently maps
+Forest → Plains when Fruit stays below 6% for 90 pressure days. `TerrainStats.Recovery` maps
+Plains → Forest when average vegetation is at least 50%, fertilizer is at least 5, and a neighboring
+Forest provides a seed source for 30 pressure days. Transition chances and pressure decay live in
+`TerrainSuccessionSettings`; all rolls use the seeded world RNG. Transitions rebuild resource pools
+and emit located world events.
 
 ### 3. Seasons
 One tick is one day. Four 90-day seasons form a 360-day year in
@@ -345,8 +348,8 @@ Per tile:
 5. `ApplyWaterExposure` — drowning losses for populations stranded on River terrain
 6. `ProduceByproducts` — count × species rate
 7. `DecayByproducts` — 10%/tick
-8. `ApplyTerrainDegradation` — check FoodSubtype.Fruit ratio; if sustained below 6% for 90 ticks
-   convert Forest→Plains and rebuild resource pools
+8. `ApplyTerrainSuccession` — accumulate or decay degradation/recovery pressure, perform seeded
+   Forest↔Plains transitions, rebuild resource pools, and emit located events
 
 Global:
 9. `Migrate` — flee-from-water check first, then satisfaction-based scarcity check (Food/Water/Prey);
@@ -374,8 +377,8 @@ Global:
   matters.
 - **Fractional population change, no rounding spikes** — seasonal births, deprivation deaths, and
   predation bank fractional totals and apply whole individuals only when an accumulator crosses 1.
-- **Terrain is static** — set during world seeding, never changes at runtime except via terrain
-  degradation. Seasonal and fertilizer modifiers apply at tick time, not to the terrain definition.
+- **Terrain transitions are configured and seeded** — degradation and ecological recovery use
+  `TerrainSuccessionSettings`; transition rolls share the world's deterministic RNG.
 - **`Population.EffectiveFoodDemand` / `EffectiveWaterDemand` / `EffectivePreyDemand`** — food and
   prey demand scale with SizeIndex; water does not. Evolving larger has an asymmetric cost.
 - **Ease-of-eating is a diet gate** — a pool absent from a species' `EaseOfEating` dict (or set to 0)
