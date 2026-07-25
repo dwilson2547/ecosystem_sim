@@ -53,6 +53,17 @@ public partial class ScenarioSelectionOverlay : CanvasLayer
             "Start Challenge",
             ScenarioKind.LocustPlague);
 
+        content.AddChild(new HSeparator());
+
+        AddMode(
+            content,
+            "DROUGHT RECOVERY",
+            "Two years · 10 action points\n"
+            + "Keep all dinosaur lineages alive and restore average land freshwater to 55% "
+            + "and vegetation to 50%.",
+            "Start Challenge",
+            ScenarioKind.DroughtRecovery);
+
         _error = AddLabel(content, string.Empty, 12, new Color(1f, 0.35f, 0.35f));
         SimManager.Instance.ScenarioSelectionRequested += ShowSelection;
     }

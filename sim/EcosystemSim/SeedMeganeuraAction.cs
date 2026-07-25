@@ -6,6 +6,8 @@ public sealed class SeedMeganeuraAction : IScenarioAction
     public required int TileY { get; init; }
     public string Name => "Seed Meganeura";
     public int Cost => 3;
+    public bool SupportsScenario(ScenarioKind kind) =>
+        kind is ScenarioKind.Sandbox or ScenarioKind.LocustPlague;
 
     public bool CanExecute(WorldState state, out string error)
     {

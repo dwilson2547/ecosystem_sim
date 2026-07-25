@@ -7,6 +7,7 @@ public static class ScenarioFactory
         var session = kind switch
         {
             ScenarioKind.LocustPlague => StartLocustPlague(state),
+            ScenarioKind.DroughtRecovery => StartDroughtRecovery(state),
             _ => new ScenarioSession
             {
                 Kind = ScenarioKind.Sandbox,
@@ -67,5 +68,39 @@ public static class ScenarioFactory
                      .SelectMany(t => t.Resources)
                      .Where(r => r.FoodSubtype == FoodSubtype.Graze))
             pool.Amount = Math.Min(pool.Amount, pool.Capacity * 0.30f);
+    }
+
+    private static ScenarioSession StartDroughtRecovery(WorldState state)
+    {
+        SeedDrought(state);
+
+        return new ScenarioSession
+        {
+            Kind = ScenarioKind.DroughtRecovery,
+            Mode = ScenarioMode.Challenge,
+            Name = "Drought Recovery",
+            Description = "Protect the dinosaur lineages and restore freshwater and vegetation during a two-year drought.",
+            StartTick = state.Tick,
+            DurationDays = World.DaysPerYear * 2,
+            InitialActionPoints = 10,
+            ActionPointsRemaining = 10,
+        };
+    }
+
+    private static void SeedDrought(WorldState state)
+    {
+        state.CurrentWeather = Weather.Drought;
+        state.WeatherTicksRemaining = World.DaysPerSeason;
+
+        foreach (var tile in state.Map.AllTiles().Where(t => !TerrainStats.IsOcean(t.Terrain)))
+        {
+            foreach (var pool in tile.Resources)
+            {
+                if (pool.Type == ResourceType.Water)
+                    pool.Amount = Math.Min(pool.Amount, pool.Capacity * 0.10f);
+                else if (pool.Type == ResourceType.Food)
+                    pool.Amount = Math.Min(pool.Amount, pool.Capacity * 0.20f);
+            }
+        }
     }
 }

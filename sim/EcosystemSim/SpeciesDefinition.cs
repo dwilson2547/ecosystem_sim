@@ -61,6 +61,10 @@ public class SpeciesDefinition
 
     public bool IsPredator => PreyConsumptionRate > 0;
 
+    // true for active hunters that pursue a richer prey tile even while ordinary food keeps them fed.
+    // Most predators remain satisfaction-driven; this is for roaming apexes such as Megalodon.
+    public bool PursuesPreyWhenFed { get; init; }
+
     // ── symbiosis ──────────────────────────────────────────────────────────
 
     // pollination (mutualism): where this species is present, Fruit regen on the tile is lifted by up

@@ -6,6 +6,8 @@ public sealed class CullLocustsAction : IScenarioAction
     public required int TileY { get; init; }
     public string Name => "Cull locusts";
     public int Cost => 1;
+    public bool SupportsScenario(ScenarioKind kind) =>
+        kind is ScenarioKind.Sandbox or ScenarioKind.LocustPlague;
 
     public bool CanExecute(WorldState state, out string error)
     {

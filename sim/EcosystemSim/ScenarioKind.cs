@@ -4,6 +4,7 @@ public enum ScenarioKind
 {
     Sandbox,
     LocustPlague,
+    DroughtRecovery,
 }
 
 public enum ScenarioMode

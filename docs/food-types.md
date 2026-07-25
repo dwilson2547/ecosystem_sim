@@ -76,7 +76,9 @@ readily than one with ease 5, because the weighted food value is lower.
 
 Kronosaurus has no `EaseOfEating` — it's a pure predator (`PreyConsumptionRate`), not a food consumer.
 Megalodon is pinned to DeepOcean and Xiphactinus to ShallowOcean (`AllowedTerrains`), which is why the
-shallow strip needed its own hunter — the deep apexes cannot reach the Mosasaurus nursery.
+shallow strip needed its own hunter — the deep apexes cannot reach the Mosasaurus nursery. Megalodon
+also has `PursuesPreyWhenFed`, so these food pools keep it alive between hunts without anchoring it
+to one tile.
 
 ---
 

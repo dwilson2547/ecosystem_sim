@@ -268,9 +268,10 @@ public static class DemoWorldSeeder
             // singleton apex predator: eats all marine prey; survives on fish/squid/whale between hunts
             FoodConsumptionRate  = 1f,
             EaseOfEating     = { [FoodSubtype.Fish] = 2f, [FoodSubtype.Squid] = 2f, [FoodSubtype.Whale] = 3f },
-            PreyConsumptionRate  = 0.025f,
+            PreyConsumptionRate  = 0.002f,
             PreferredPrey    = [PreyCategory.LargeMarine],
             AcceptedPrey     = [PreyCategory.SmallMarine],
+            PursuesPreyWhenFed = true,
             ByproductRates   = {},
             BreedingRate     = 0f,
             FoodDeprivationMortalityRate = 0.001f,

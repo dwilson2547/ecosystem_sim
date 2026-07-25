@@ -138,6 +138,106 @@ public class ScenarioTests
         Assert.False(scenario.Objectives.Single(o => o.Id == "dinosaur-survival").IsMet);
     }
 
+    [Fact]
+    public void StartScenario_DroughtRecoverySeedsStressAndObjectives()
+    {
+        var world = CreateScenarioWorld();
+
+        var scenario = world.StartScenario(ScenarioKind.DroughtRecovery);
+
+        Assert.Equal(World.DaysPerYear * 2, scenario.DurationDays);
+        Assert.Equal(10, scenario.ActionPointsRemaining);
+        Assert.Equal(Weather.Drought, world.State.CurrentWeather);
+        Assert.Equal(3, scenario.Objectives.Count);
+        Assert.Equal("10%", scenario.Objectives.Single(o => o.Id == "freshwater-health").CurrentValue);
+        Assert.Equal("20%", scenario.Objectives.Single(o => o.Id == "vegetation-health").CurrentValue);
+    }
+
+    [Fact]
+    public void TryApplyScenarioAction_DroughtActionsRestoreResourcesAndSeedRain()
+    {
+        var world = CreateScenarioWorld();
+        var scenario = world.StartScenario(ScenarioKind.DroughtRecovery);
+        var tile = world.State.Map.GetTile(4, 4);
+
+        var water = world.TryApplyScenarioAction(new CreateWateringHolesAction
+        {
+            TileX = tile.X,
+            TileY = tile.Y,
+        });
+        var vegetation = world.TryApplyScenarioAction(new RestoreVegetationAction
+        {
+            TileX = tile.X,
+            TileY = tile.Y,
+        });
+        var rain = world.TryApplyScenarioAction(new SeedRainAction
+        {
+            TileX = tile.X,
+            TileY = tile.Y,
+        });
+
+        Assert.True(water.Success);
+        Assert.True(vegetation.Success);
+        Assert.True(rain.Success);
+        Assert.Equal(3, scenario.ActionPointsRemaining);
+        Assert.Equal(Weather.Rainy, world.State.CurrentWeather);
+        Assert.Equal(SeedRainAction.RainDurationDays, world.State.WeatherTicksRemaining);
+        var waterPool = tile.Resources.Single(r => r.Type == ResourceType.Water);
+        Assert.True(waterPool.Capacity >= 80f);
+        Assert.Equal(waterPool.Capacity, waterPool.Amount, 3);
+        Assert.All(tile.Resources.Where(r => r.Type == ResourceType.Food),
+            pool => Assert.Equal(pool.Capacity, pool.Amount, 3));
+    }
+
+    [Fact]
+    public void TryApplyScenarioAction_RejectsActionFromDifferentChallenge()
+    {
+        var world = CreateScenarioWorld();
+        var scenario = world.StartScenario(ScenarioKind.DroughtRecovery);
+        var tile = world.State.Map.GetTile(0, 0);
+
+        var result = world.TryApplyScenarioAction(new CullLocustsAction
+        {
+            TileX = tile.X,
+            TileY = tile.Y,
+        });
+
+        Assert.False(result.Success);
+        Assert.Equal(10, scenario.ActionPointsRemaining);
+        Assert.Contains("not available", result.Message);
+    }
+
+    [Fact]
+    public void DroughtRecovery_ResolvesVictoryWhenFinalObjectivesAreMet()
+    {
+        var world = CreateScenarioWorld();
+        var scenario = world.StartScenario(ScenarioKind.DroughtRecovery);
+        foreach (var pool in world.State.Map.AllTiles()
+                     .Where(t => !TerrainStats.IsOcean(t.Terrain))
+                     .SelectMany(t => t.Resources))
+            pool.Amount = pool.Capacity;
+
+        world.State.Tick = scenario.StartTick + scenario.DurationDays;
+        scenario.Refresh(world.State);
+
+        Assert.Equal(ScenarioStatus.Won, scenario.Status);
+    }
+
+    [Fact]
+    public void DroughtRecovery_ReturnsToDroughtAfterSeededRainExpires()
+    {
+        var world = CreateScenarioWorld();
+        world.StartScenario(ScenarioKind.DroughtRecovery);
+        var tile = world.State.Map.GetTile(0, 0);
+        world.TryApplyScenarioAction(new SeedRainAction { TileX = tile.X, TileY = tile.Y });
+        world.State.WeatherTicksRemaining = 0;
+
+        world.Tick();
+
+        Assert.Equal(Weather.Drought, world.State.CurrentWeather);
+        Assert.Equal(World.DaysPerSeason, world.State.WeatherTicksRemaining);
+    }
+
     private static World CreateScenarioWorld()
     {
         var world = new World(10, 10, seed: 42);
@@ -148,6 +248,13 @@ public class ScenarioTests
             {
                 Type = ResourceType.Food,
                 FoodSubtype = FoodSubtype.Graze,
+                Amount = 100f,
+                Capacity = 100f,
+                RegenPerTick = 5f,
+            });
+            tile.Resources.Add(new ResourcePool
+            {
+                Type = ResourceType.Water,
                 Amount = 100f,
                 Capacity = 100f,
                 RegenPerTick = 5f,

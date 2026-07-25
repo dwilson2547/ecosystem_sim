@@ -143,9 +143,19 @@ public partial class TileInfoPanel : CanvasLayer
             return;
         }
 
-        AddAction(new CullLocustsAction { TileX = _tile.X, TileY = _tile.Y });
-        AddAction(new RestoreGrassAction { TileX = _tile.X, TileY = _tile.Y });
-        AddAction(new SeedMeganeuraAction { TileX = _tile.X, TileY = _tile.Y });
+        if (scenario.Kind is ScenarioKind.Sandbox or ScenarioKind.LocustPlague)
+        {
+            AddAction(new CullLocustsAction { TileX = _tile.X, TileY = _tile.Y });
+            AddAction(new RestoreGrassAction { TileX = _tile.X, TileY = _tile.Y });
+            AddAction(new SeedMeganeuraAction { TileX = _tile.X, TileY = _tile.Y });
+        }
+
+        if (scenario.Kind is ScenarioKind.Sandbox or ScenarioKind.DroughtRecovery)
+        {
+            AddAction(new CreateWateringHolesAction { TileX = _tile.X, TileY = _tile.Y });
+            AddAction(new RestoreVegetationAction { TileX = _tile.X, TileY = _tile.Y });
+            AddAction(new SeedRainAction { TileX = _tile.X, TileY = _tile.Y });
+        }
 
         if (!string.IsNullOrEmpty(_actionFeedback))
             Row($"  {_actionFeedback}",

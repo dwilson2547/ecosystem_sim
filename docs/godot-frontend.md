@@ -60,7 +60,7 @@ godot/
     ├── HUD.cs             — top-left panel: day / season / year / speed
     ├── FactionPanel.cs    — left-side panel: faction list, population summaries, diplomatic relations
     ├── ScenarioPanel.cs   — top-right challenge time, AP, objectives, and result
-    ├── ScenarioSelectionOverlay.cs — startup Sandbox/Locust Plague picker
+    ├── ScenarioSelectionOverlay.cs — startup Sandbox/Locust Plague/Drought Recovery picker
     └── TileInfoPanel.cs   — right-side tile details and scenario interventions
 ```
 
@@ -103,7 +103,7 @@ Main (Node2D / SimMain)
 │   └── PanelContainer (anchored right, 300px)
 │       └── ScrollContainer → VBoxContainer → dynamic content
 └── ScenarioSelectionOverlay (CanvasLayer)
-    └── full-screen ColorRect → centered Sandbox/Locust Plague choices
+    └── full-screen ColorRect → centered mode choices
 ```
 
 ---
@@ -115,7 +115,7 @@ Singleton accessed anywhere via `SimManager.Instance`.
 | Property / Method | Description |
 |-------------------|-------------|
 | `World`           | The live `EcosystemSim.World` |
-| `CurrentScenarioKind` | Selected Sandbox or Locust Plague mode |
+| `CurrentScenarioKind` | Selected Sandbox, Locust Plague, or Drought Recovery mode |
 | `TickInterval`    | Seconds between ticks (default 2.0) |
 | `Paused`          | Read/write; emits `PausedChanged` signal |
 | `TogglePause()`   | Flip pause state |
@@ -175,9 +175,10 @@ Sections shown (each separated by a divider):
 - **Header** — `(col, row)  TerrainType`
 - **Resources** — per resource: `Type  amount/capacity (%)  +regen/tick`
 - **Fertilizer** — shown if > 1 unit: `Fertilizer  amount`
-- **Interventions** — Cull locusts, Restore grass, and Seed Meganeura buttons. Challenge buttons
-  show AP costs; Sandbox actions are free. Invalid actions are disabled with an inline reason, and
-  completed actions show inline success/error feedback.
+- **Interventions** — scenario-specific actions. Locust Plague offers culling, grass restoration,
+  and Meganeura seeding; Drought Recovery offers watering holes, vegetation restoration, and rain
+  seeding. Sandbox offers both sets for free. Invalid actions are disabled with an inline reason,
+  and completed actions show inline success/error feedback.
 - **Populations** — one card per living population, sorted by count descending:
   - Species name + count, faction name, satisfaction, breeding schedule, active food/water
     deprivation pressure, size index, immunity delta, and infection details
@@ -198,7 +199,8 @@ Sections:
 ## Scenario flow
 
 The simulation starts paused behind `ScenarioSelectionOverlay`. Sandbox has unlimited time and
-free interventions. Locust Plague runs for three in-game years with 10 shared action points.
+free interventions. Locust Plague runs for three in-game years with 10 shared action points;
+Drought Recovery runs for two years with the same budget.
 
 `ScenarioPanel` displays days remaining, the current AP budget, live objective values, and the
 final victory/defeat message. When a challenge resolves, `SimManager` pauses automatically and
@@ -207,6 +209,10 @@ returns to the startup picker.
 
 The Locust Plague objectives are to keep Triceratops, Alamosaurus, Parasaurolophus, and
 Tyrannosaurus alive; finish with at most 500 locusts; and retain at least 25% average Plains grass.
+
+Drought Recovery keeps the same dinosaur-survival requirement and asks the player to finish with
+at least 55% average land freshwater and 50% average land vegetation. The world remains in drought
+except during player-seeded 45-day rain spells.
 
 ## What's not yet in the UI
 

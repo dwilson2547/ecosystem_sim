@@ -5,8 +5,8 @@ trade byproducts, evolve, catch diseases, and migrate across a tile-based world.
 a god-figure who seeds the world and intervenes in real time. All behavior is emergent — nothing
 is scripted.
 
-**Current state:** engine-complete simulation library + playable Godot 4.7 frontend with Sandbox
-and Locust Plague challenge modes. Terminal prototype (`SimConsole`) still works.
+**Current state:** engine-complete simulation library + playable Godot 4.7 frontend with Sandbox,
+Locust Plague, and Drought Recovery modes. Terminal prototype (`SimConsole`) still works.
 
 ---
 
@@ -14,7 +14,7 @@ and Locust Plague challenge modes. Terminal prototype (`SimConsole`) still works
 
 - **Language:** C# 12, .NET 8
 - **Engine layer:** `EcosystemSim` — a class library, zero UI dependencies, engine-agnostic
-- **Tests:** xUnit 3, `EcosystemSim.Tests` — 97 tests, run `dotnet test` from `sim/`
+- **Tests:** xUnit 3, `EcosystemSim.Tests` — 103 tests, run `dotnet test` from `sim/`
 - **Console UI:** `SimConsole` — terminal renderer / prototype; run from `sim/`
 - **Game UI:** Godot 4.7 (.NET), lives in `godot/`; references `EcosystemSim` via ProjectReference
 
@@ -61,7 +61,7 @@ sim/
 │   ├── Weather.cs          # Enum: Normal/Rainy/Drought (world-level regen modifier over seasons)
 │   ├── Disease.cs          # Disease blueprint (spread, mortality, recovery rates)
 │   ├── ScenarioSession.cs  # Active mode, objectives, budget, duration, and result
-│   ├── ScenarioFactory.cs  # Scenario setup and Locust Plague outbreak seeding
+│   ├── ScenarioFactory.cs  # Scenario setup, outbreak seeding, and drought stress
 │   ├── *Action.cs          # Validated, tile-targeted scenario interventions
 │   └── *Command.cs         # IWorldCommand implementations for player interventions
 │
@@ -84,14 +84,14 @@ sim/
 
 ```bash
 cd sim
-dotnet test                        # run all 97 tests
+dotnet test                        # run all 103 tests
 dotnet run --project SimConsole    # terminal prototype
 dotnet run --project EcoReport -c Release   # headless ecology stability report (balance tuning)
 ```
 
 SimConsole controls: `[Space]` pause, `[← →]` speed, `[D]` disease, `[T]` trade, `[Q]` quit.
 
-Godot: open `godot/project.godot` in Godot 4.7, choose Sandbox or Locust Plague, then use
+Godot: open `godot/project.godot` in Godot 4.7, choose a mode, then use
 `Space` to pause, `+`/`-` for speed, middle-mouse drag to pan, and scroll to zoom. See
 `docs/godot-frontend.md` for full details.
 
@@ -179,6 +179,10 @@ Two independent triggers, checked in `Migrate()` in this order:
    Currently: Alamosaurus 3; Triceratops, Megalodon, Plesiosaur, Kronosaurus 2; everyone else 1. Only
    the resource/prey scarcity search is view-aware — reactive flee-from-water and predator-scatter
    moves stay immediate-neighbour (nearest-refuge, not best-distant).
+
+   **Active hunting drive** — predators with `PursuesPreyWhenFed` seek a richer prey tile even when
+   ordinary food has satisfied them. Megalodon uses this to patrol DeepOcean instead of remaining on
+   its starting fish pool; its low prey demand keeps that patrol from destabilizing marine lineages.
 
 ### 7. Density drain
 Every 5 individuals in a population compounds its resource draw exponentially:
@@ -298,15 +302,21 @@ to 1.0 on the new baseline. Naming tiers: base → Greater/Lesser → Giant/Dwar
 independently reach the same tier, they share one definition. See **`docs/speciation.md`**.
 
 ### 15. Scenarios and interventions
-`World.StartScenario()` creates either an unrestricted Sandbox session or the three-year Locust
-Plague challenge. Challenge state lives in `WorldState.Scenario`: remaining days, a shared 10-point
-budget, objective progress, and won/lost status. The plague starts with 12 Plains outbreaks of 42
-locusts and suppresses Plains grass to at most 30%.
+`World.StartScenario()` creates an unrestricted Sandbox session or a timed challenge. Challenge
+state lives in `WorldState.Scenario`: remaining days, a shared 10-point budget, objective progress,
+and won/lost status. Locust Plague lasts three years, starts with 12 Plains outbreaks of 42 locusts,
+and suppresses Plains grass to at most 30%.
 
 Victory requires all four land dinosaur lineages to survive, locusts to finish at 500 or fewer,
 and average Plains Graze to finish at 25% or more. Tile-targeted `IScenarioAction`s currently cull
 99% of locusts within two hexes for 1 AP, fully restore Plains Graze within four hexes for 2 AP,
 or seed five Meganeura for 3 AP. Sandbox uses the same actions without costs or a time limit.
+
+Drought Recovery lasts two years under persistent drought weather. It starts land freshwater at
+at most 10% and vegetation at at most 20%. Victory requires the same four dinosaur lineages,
+average land freshwater of at least 55%, and average land vegetation of at least 50%. Its actions
+create watering holes within three hexes for 2 AP, restore vegetation within three hexes for 2 AP,
+or seed 45 days of global rain for 3 AP. Actions are validated against the active scenario.
 
 ---
 
@@ -404,10 +414,7 @@ what it needs on specific tiles. Key helpers in `WorldTests.cs`:
 8. **Territorial conflict** (replaces declarative war, see §12) — populations migrate into each other
    and brawl on a shared tile until one retreats, instead of accumulating tension → AtWar. Build with
    the faction/symbiosis work; re-enable or delete `DiplomaticWarEnabled` at that point.
-9. **Active apex predators** — the Megalodon currently survives fully on fish and never migrates to
-   hunt (sat stays at 1.0). If apexes should exert top-down control, fish must not *fully* sate a
-   hunter (lower food ease / raise `MigrationThreshold`, or a hunger-to-hunt drive).
-10. **Faction memory** — grudges, reputation, vassal relationships
+9. **Faction memory** — grudges, reputation, vassal relationships
 
 See `docs/implementation.md` for mechanics of every implemented system,
 `docs/food-types.md` for typed food subtype mechanics, and

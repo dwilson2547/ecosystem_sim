@@ -60,6 +60,9 @@ public class World
             return new(false, "Start a scenario before applying interventions.", 0);
         if (scenario.Status != ScenarioStatus.Active)
             return new(false, "This challenge is already complete.", scenario.ActionPointsRemaining);
+        if (!action.SupportsScenario(scenario.Kind))
+            return new(false, $"{action.Name} is not available in {scenario.Name}.",
+                scenario.ActionPointsRemaining);
         if (!action.CanExecute(State, out var error))
             return new(false, error, scenario.ActionPointsRemaining);
         if (scenario.IsChallenge && scenario.ActionPointsRemaining < action.Cost)
@@ -154,6 +157,17 @@ public class World
     private void AdvanceWeather()
     {
         if (State.WeatherTicksRemaining > 0) { State.WeatherTicksRemaining--; return; }
+
+        if (State.Scenario is
+            {
+                Kind: ScenarioKind.DroughtRecovery,
+                Status: ScenarioStatus.Active,
+            })
+        {
+            State.CurrentWeather = Weather.Drought;
+            State.WeatherTicksRemaining = DaysPerSeason;
+            return;
+        }
 
         var roll = _random.NextDouble();
         var (weather, minTicks, maxTicks) = roll switch
@@ -617,6 +631,16 @@ public class World
                         var fleeing = Math.Max(1, pop.Count / 3);
                         moves.Add((pop, fleeing, tile, refuge));
                         pop.MigrationCooldown = pop.Species.MigrationCooldownTicks;
+                        continue;
+                    }
+                }
+
+                if (pop.Species.PursuesPreyWhenFed && pop.Species.IsPredator)
+                {
+                    var preyDestination = BestNeighborForPrey(tile, pop.Species);
+                    if (preyDestination is not null)
+                    {
+                        moves.Add((pop, pop.Count, tile, preyDestination));
                         continue;
                     }
                 }
@@ -1334,6 +1358,7 @@ public class World
             PollinationBoost     = parent.PollinationBoost,
             PreferredPrey        = parent.PreferredPrey,
             AcceptedPrey         = parent.AcceptedPrey,
+            PursuesPreyWhenFed   = parent.PursuesPreyWhenFed,
             ByproductRates       = parent.ByproductRates.ToDictionary(kv => kv.Key, kv => kv.Value * sizeIndex),
             CombatStrength       = parent.CombatStrength   * MathF.Sqrt(sizeIndex),
             BreedingRate         = parent.BreedingRate / MathF.Sqrt(sizeIndex),

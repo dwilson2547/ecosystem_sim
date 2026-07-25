@@ -370,6 +370,59 @@ public class WorldTests
     }
 
     [Fact]
+    public void Migrate_FedApexWithHuntingDriveMovesTowardVisiblePrey()
+    {
+        var world = new World(3, 1, seed: 42);
+        foreach (var tile in world.State.Map.AllTiles())
+            tile.Terrain = TerrainType.DeepOcean;
+
+        var home = world.State.Map.GetTile(0, 0);
+        home.Resources.Add(new ResourcePool
+        {
+            Type = ResourceType.Food,
+            FoodSubtype = FoodSubtype.Fish,
+            Amount = 100f,
+            Capacity = 100f,
+            RegenPerTick = 10f,
+        });
+        var apex = new Population
+        {
+            Species = new SpeciesDefinition
+            {
+                Name = "Roaming Apex",
+                FoodConsumptionRate = 1f,
+                EaseOfEating = { [FoodSubtype.Fish] = 5f },
+                PreyConsumptionRate = 1f,
+                PreferredPrey = [PreyCategory.LargeMarine],
+                PursuesPreyWhenFed = true,
+                ViewRadius = 2,
+                AllowedTerrains = [TerrainType.DeepOcean],
+                BreedingRate = 0f,
+                FoodDeprivationMortalityRate = 0f,
+            },
+            Count = 1,
+        };
+        home.AddPopulation(apex);
+
+        world.State.Map.GetTile(2, 0).AddPopulation(new Population
+        {
+            Species = new SpeciesDefinition
+            {
+                Name = "Marine Prey",
+                AsPreyCategory = PreyCategory.LargeMarine,
+                BreedingRate = 0f,
+                FoodDeprivationMortalityRate = 0f,
+            },
+            Count = 20,
+        });
+
+        world.Tick();
+
+        Assert.Equal(1f, apex.LastSatisfaction, 3);
+        Assert.Equal(world.State.Map.GetTile(1, 0), apex.CurrentTile);
+    }
+
+    [Fact]
     public void Tick_NarrowViewTakesBestAdjacentTile()
     {
         var world = SeedViewScenario(viewRadius: 1);

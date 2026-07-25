@@ -41,6 +41,14 @@ public sealed class ScenarioSession
             .ToHashSet();
         var livingDinosaurCount = RequiredDinosaurLineages.Count(livingLineages.Contains);
 
+        if (Kind == ScenarioKind.DroughtRecovery)
+        {
+            RefreshDroughtObjectives(state, livingDinosaurCount);
+            ResolveIfExpired(state,
+                "Ecosystem stabilized: the dinosaur lineages survived and the drought-damaged habitat recovered.");
+            return;
+        }
+
         var locustCount = state.Map.AllPopulations()
             .Where(p => p.Count > 0 && p.Species.EffectiveRootName == "Locust")
             .Sum(p => p.Count);
@@ -78,12 +86,60 @@ public sealed class ScenarioSession
                 grassPercent >= 25f),
         ];
 
+        ResolveIfExpired(state,
+            "Ecosystem stabilized: the dinosaur lineages survived the locust plague.");
+    }
+
+    private void RefreshDroughtObjectives(WorldState state, int livingDinosaurCount)
+    {
+        var landTiles = state.Map.AllTiles()
+            .Where(t => !TerrainStats.IsOcean(t.Terrain))
+            .ToList();
+        var waterPools = landTiles
+            .SelectMany(t => t.Resources)
+            .Where(r => r.Type == ResourceType.Water && r.Capacity > 0f)
+            .ToList();
+        var vegetationPools = landTiles
+            .SelectMany(t => t.Resources)
+            .Where(r => r.Type == ResourceType.Food && r.Capacity > 0f)
+            .ToList();
+        var waterPercent = AverageCapacityPercent(waterPools);
+        var vegetationPercent = AverageCapacityPercent(vegetationPools);
+
+        Objectives =
+        [
+            new(
+                "dinosaur-survival",
+                "Dinosaur lineages alive",
+                $"{livingDinosaurCount}/{RequiredDinosaurLineages.Length}",
+                $"{RequiredDinosaurLineages.Length}/{RequiredDinosaurLineages.Length}",
+                livingDinosaurCount == RequiredDinosaurLineages.Length),
+            new(
+                "freshwater-health",
+                "Average land freshwater",
+                $"{waterPercent:F0}%",
+                "≥ 55%",
+                waterPercent >= 55f),
+            new(
+                "vegetation-health",
+                "Average land vegetation",
+                $"{vegetationPercent:F0}%",
+                "≥ 50%",
+                vegetationPercent >= 50f),
+        ];
+    }
+
+    private static float AverageCapacityPercent(IReadOnlyCollection<ResourcePool> pools) =>
+        pools.Count == 0 ? 0f : pools.Average(r => r.Amount / r.Capacity) * 100f;
+
+    private void ResolveIfExpired(WorldState state, string victoryMessage)
+    {
         if (Status != ScenarioStatus.Active || ElapsedDays(state) < DurationDays) return;
 
         var won = Objectives.All(o => o.IsMet);
         Status = won ? ScenarioStatus.Won : ScenarioStatus.Lost;
         ResultMessage = won
-            ? "Ecosystem stabilized: the dinosaur lineages survived the locust plague."
+            ? victoryMessage
             : "Challenge failed: one or more ecosystem objectives were missed.";
     }
 }

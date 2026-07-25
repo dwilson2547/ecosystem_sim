@@ -353,6 +353,11 @@ Process for the resource-scarcity path (in `Migrate()`):
 a tile can sustain (only the excess migrates) — Food sums ease-weighted regen across all food
 pools, Water uses plain pool regen, Prey uses current `EffectivePreyAmount` as supply proxy.
 
+Predators with `SpeciesDefinition.PursuesPreyWhenFed` bypass the normal satisfaction gate when a
+richer prey tile is visible. Megalodon enables this trait so its singleton patrols DeepOcean while
+still using fish/squid/whale as a survival floor. Its prey demand is deliberately low (`0.002`) so
+the patrol exerts pressure without driving Plesiosaur or Mosasaurus extinct.
+
 **Merge blending:**
 ```csharp
 existing.SizeIndex     = (existing.SizeIndex     × existing.Count + pop.SizeIndex     × pop.Count) / total
@@ -517,10 +522,11 @@ base species; propagated automatically to derived species.
 
 ## Scenarios and interventions
 
-`ScenarioFactory.Create()` configures a session without adding UI dependencies to the engine.
+`ScenarioFactory.Start()` configures a session without adding UI dependencies to the engine.
 Sandbox has unlimited time and free actions. Locust Plague lasts `3 × World.DaysPerYear`, starts
 with 10 action points, and seeds 12 Plains tiles with 42 locusts each while reducing Plains Graze
-to at most 30% capacity.
+to at most 30% capacity. Drought Recovery lasts `2 × World.DaysPerYear`, starts with 10 points,
+forces persistent drought weather, caps land freshwater at 10%, and caps land vegetation at 20%.
 
 | Objective | Target |
 |-----------|--------|
@@ -528,15 +534,23 @@ to at most 30% capacity.
 | Locust control | Total living locust population ≤ 500 |
 | Plains recovery | Average Plains Graze amount/capacity ≥ 25% |
 
+Drought Recovery uses dinosaur survival plus average land freshwater ≥55% and average land
+vegetation ≥50%. A seeded rain spell temporarily overrides the persistent drought; when it ends,
+the challenge restores drought weather instead of returning to stochastic weather.
+
 `IScenarioAction` exposes `Name`, `Cost`, `CanExecute(WorldState, out error)`, and
 `Execute(WorldState)`. `World.TryApplyScenarioAction()` rejects missing or inactive scenarios,
-invalid targets, completed challenges, and insufficient budgets before spending points.
+actions unsupported by the active scenario, invalid targets, completed challenges, and insufficient
+budgets before spending points.
 
 | Action | Cost | Effect |
 |--------|------|--------|
 | `CullLocustsAction` | 1 AP | Removes 99% of locusts within two hexes of the selected tile |
 | `RestoreGrassAction` | 2 AP | Refills Plains Graze pools within four hexes |
 | `SeedMeganeuraAction` | 3 AP | Adds five Meganeura to a selected dry-land tile |
+| `CreateWateringHolesAction` | 2 AP | Refills or creates freshwater pools within three hexes |
+| `RestoreVegetationAction` | 2 AP | Refills land food pools within three hexes |
+| `SeedRainAction` | 3 AP | Replaces drought with 45 days of global rainy weather |
 
 Objective progress refreshes after every tick and successful action. Challenge status becomes
 `Won` only if all objectives are met when its duration expires; otherwise it becomes `Lost`.
