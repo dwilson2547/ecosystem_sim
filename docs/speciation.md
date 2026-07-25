@@ -59,8 +59,9 @@ and after.
 | `WaterConsumptionRate` | unchanged |
 | `EaseOfEating` | unchanged (copied) — evolving size doesn't change what a species can eat |
 | `CombatStrength` | `× √sizeIndex` (matches `EffectiveCombatStrength` formula) |
-| `ReproductionRate` | `÷ √sizeIndex` — larger = slower (K-strategy) |
-| `StarvationRate` | unchanged |
+| `BreedingRate` | `÷ √sizeIndex` — larger = smaller seasonal cohorts (K-strategy) |
+| Breeding seasons/day | unchanged |
+| Deprivation tolerances and mortality rates | unchanged |
 | `ByproductRates[*]` | `× sizeIndex` — larger bodies produce more per individual |
 | `Immunity` | `parent.Immunity + ImmunityDelta`, capped at 1.0 |
 | `WarAggression` | unchanged |

@@ -21,9 +21,11 @@ public partial class SimMain : Node2D
 
         AddChild(new HUD());
         AddChild(new FactionPanel());
+        AddChild(new ScenarioPanel());
 
         _panel = new TileInfoPanel();
         AddChild(_panel);
+        AddChild(new ScenarioSelectionOverlay());
     }
 
     public override void _UnhandledInput(InputEvent ev)

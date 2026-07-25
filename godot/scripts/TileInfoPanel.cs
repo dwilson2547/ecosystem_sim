@@ -13,6 +13,8 @@ public partial class TileInfoPanel : CanvasLayer
     private PanelContainer _panel   = null!;
     private VBoxContainer  _content = null!;
     private Tile?          _tile;
+    private string _actionFeedback = string.Empty;
+    private bool _actionSucceeded;
 
     public override void _Ready()
     {
@@ -36,9 +38,9 @@ public partial class TileInfoPanel : CanvasLayer
         _content.CustomMinimumSize = new Vector2(280f, 0f);
         scroll.AddChild(_content);
 
-        _panel.MouseFilter   = Control.MouseFilterEnum.Ignore;
-        scroll.MouseFilter   = Control.MouseFilterEnum.Ignore;
-        _content.MouseFilter = Control.MouseFilterEnum.Ignore;
+        _panel.MouseFilter   = Control.MouseFilterEnum.Stop;
+        scroll.MouseFilter   = Control.MouseFilterEnum.Stop;
+        _content.MouseFilter = Control.MouseFilterEnum.Pass;
         _panel.Visible = false;
         SimManager.Instance.Ticked += OnTicked;
         SimManager.Instance.WorldReset += HidePanel;
@@ -47,6 +49,7 @@ public partial class TileInfoPanel : CanvasLayer
     public void ShowTile(Tile tile)
     {
         _tile = tile;
+        _actionFeedback = string.Empty;
         _panel.Visible = true;
         Rebuild();
     }
@@ -101,6 +104,8 @@ public partial class TileInfoPanel : CanvasLayer
             Sep();
         }
 
+        BuildInterventions();
+
         // living populations
         var living = _tile.Populations.Where(p => p.Count > 0)
                          .OrderByDescending(p => p.Count).ToList();
@@ -120,6 +125,64 @@ public partial class TileInfoPanel : CanvasLayer
             foreach (var pop in extinct)
                 Row($"  [{pop.Species.Name}]", color: new Color(0.38f, 0.38f, 0.38f));
         }
+    }
+
+    private void BuildInterventions()
+    {
+        if (_tile is null) return;
+        var scenario = SimManager.Instance.World.State.Scenario;
+        if (scenario is null) return;
+
+        Row("Interventions", color: new Color(1f, 0.85f, 0.35f));
+
+        if (scenario.Status != ScenarioStatus.Active)
+        {
+            Row("  Challenge complete — interventions are locked.",
+                color: new Color(0.65f, 0.65f, 0.65f));
+            Sep();
+            return;
+        }
+
+        AddAction(new CullLocustsAction { TileX = _tile.X, TileY = _tile.Y });
+        AddAction(new RestoreGrassAction { TileX = _tile.X, TileY = _tile.Y });
+        AddAction(new SeedMeganeuraAction { TileX = _tile.X, TileY = _tile.Y });
+
+        if (!string.IsNullOrEmpty(_actionFeedback))
+            Row($"  {_actionFeedback}",
+                color: _actionSucceeded
+                    ? new Color(0.45f, 1f, 0.45f)
+                    : new Color(1f, 0.4f, 0.35f));
+        Sep();
+    }
+
+    private void AddAction(IScenarioAction action)
+    {
+        var scenario = SimManager.Instance.World.State.Scenario!;
+        var valid = action.CanExecute(SimManager.Instance.World.State, out var reason);
+        if (valid && scenario.IsChallenge && scenario.ActionPointsRemaining < action.Cost)
+        {
+            valid = false;
+            reason = $"Needs {action.Cost} action points; {scenario.ActionPointsRemaining} remain.";
+        }
+
+        var cost = scenario.IsChallenge ? $"{action.Cost} AP" : "Free";
+        var button = new Button
+        {
+            Text = $"{action.Name}  [{cost}]",
+            Disabled = !valid,
+            TooltipText = valid ? string.Empty : reason,
+        };
+        button.Pressed += () =>
+        {
+            var result = SimManager.Instance.TryApplyScenarioAction(action);
+            _actionFeedback = result.Message;
+            _actionSucceeded = result.Success;
+            CallDeferred(MethodName.Rebuild);
+        };
+        _content.AddChild(button);
+
+        if (!valid)
+            Row($"  {reason}", color: new Color(0.6f, 0.6f, 0.65f));
     }
 
     private void PopBlock(Population pop)
@@ -142,6 +205,19 @@ public partial class TileInfoPanel : CanvasLayer
 
         AddTo(vbox, $"Satisfaction  {pop.LastSatisfaction * 100f:F0}%",
               color: SatColor(pop.LastSatisfaction));
+        AddTo(vbox,
+            $"Breeding      {string.Join("/", pop.Species.BreedingSeasons)} day {pop.Species.BreedingDayOfSeason}");
+
+        if (pop.FoodDeprivationDays > 0f)
+            AddTo(vbox,
+                $"Food exhausted {pop.FoodDeprivationDays:F0}/{pop.Species.FoodDeprivationToleranceDays} days",
+                color: new Color(1f, 0.6f, 0.2f));
+
+        if (pop.WaterDeprivationDays > 0f)
+            AddTo(vbox,
+                $"Water exhausted {pop.WaterDeprivationDays:F0}/{pop.Species.WaterDeprivationToleranceDays} days",
+                color: new Color(0.4f, 0.7f, 1f));
+
         AddTo(vbox, $"Size index    {pop.SizeIndex:F2}");
 
         if (pop.ImmunityDelta > 0f)

@@ -37,7 +37,7 @@ public class World
         Migrate();
         HuntPreyForMigrants();
         foreach (var tile in State.Map.AllTiles())
-            ApplyGrowthAndDeath(tile);
+            ApplyPopulationChange(tile);
         ResolveCombat();
         SpreadDisease();
         ExecuteTrade();
@@ -45,13 +45,37 @@ public class World
         ApplyEvolution();
         ApplySpeciation();
         State.Tick++;
-        AdvanceSeason();
+        State.Scenario?.Refresh(State);
         AdvanceWeather();
     }
 
     public void Apply(IWorldCommand command) => command.Execute(State);
 
-    public const int TicksPerSeason = 25;
+    public ScenarioSession StartScenario(ScenarioKind kind) => ScenarioFactory.Start(State, kind);
+
+    public ScenarioActionResult TryApplyScenarioAction(IScenarioAction action)
+    {
+        var scenario = State.Scenario;
+        if (scenario is null)
+            return new(false, "Start a scenario before applying interventions.", 0);
+        if (scenario.Status != ScenarioStatus.Active)
+            return new(false, "This challenge is already complete.", scenario.ActionPointsRemaining);
+        if (!action.CanExecute(State, out var error))
+            return new(false, error, scenario.ActionPointsRemaining);
+        if (scenario.IsChallenge && scenario.ActionPointsRemaining < action.Cost)
+            return new(false, $"Not enough action points: {action.Name} costs {action.Cost}.",
+                scenario.ActionPointsRemaining);
+
+        var message = action.Execute(State);
+        if (scenario.IsChallenge)
+            scenario.ActionPointsRemaining -= action.Cost;
+        scenario.Refresh(State);
+        return new(true, message, scenario.ActionPointsRemaining);
+    }
+
+    public const int DaysPerSeason = 90;
+    public const int DaysPerYear = DaysPerSeason * 4;
+    public const int TicksPerSeason = DaysPerSeason;
 
     private const float FertilizerBoost = 0.02f;
 
@@ -109,14 +133,6 @@ public class World
             Season.Winter => 0.3f,
             _             => 1.0f,
         };
-    }
-
-    private void AdvanceSeason()
-    {
-        State.SeasonTick++;
-        if (State.SeasonTick < TicksPerSeason) return;
-        State.SeasonTick    = 0;
-        State.CurrentSeason = (Season)(((int)State.CurrentSeason + 1) % 4);
     }
 
     // ── weather ─────────────────────────────────────────────────────────────
@@ -203,7 +219,10 @@ public class World
     private static void DistributeResources(Tile tile)
     {
         foreach (var pop in tile.Populations)
-            pop.LastSatisfaction = pop.Count > 0 ? 1f : 0f;
+        {
+            pop.LastNutritionSatisfaction = pop.Count > 0 ? 1f : 0f;
+            pop.LastWaterSatisfaction = pop.Count > 0 ? 1f : 0f;
+        }
 
         DistributeWater(tile);
         DistributeFood(tile);
@@ -228,7 +247,7 @@ public class World
             if (demand == 0) continue;
             var received = demand * supplyRatio;
             pool?.Consume(received);
-            pop.LastSatisfaction = Math.Min(pop.LastSatisfaction, received / demand);
+            pop.LastWaterSatisfaction = received / demand;
         }
     }
 
@@ -275,7 +294,7 @@ public class World
                 pool.Consume(got);
                 received += got;
             }
-            pop.LastSatisfaction = Math.Min(pop.LastSatisfaction, demand > 0 ? received / demand : 1f);
+            pop.LastNutritionSatisfaction = demand > 0 ? received / demand : 1f;
         }
     }
 
@@ -338,7 +357,7 @@ public class World
             // food-based satisfaction intact instead of zeroing it. mirrors "survives on fish
             // between hunts" and stops a well-fed apex reading as perpetually starving.
             foreach (var h in hunters)
-                if (h.Species.FoodConsumptionRate <= 0f) h.LastSatisfaction = 0f;
+                if (h.Species.FoodConsumptionRate <= 0f) h.LastNutritionSatisfaction = 0f;
             return;
         }
 
@@ -436,65 +455,105 @@ public class World
             var foodWeight = hunter.Species.FoodConsumptionRate;
             var preyWeight = hunter.EffectivePreyDemand;
             if (foodWeight > 0f)
-                hunter.LastSatisfaction = (hunter.LastSatisfaction * foodWeight + preySat * preyWeight)
-                                          / (foodWeight + preyWeight);
+                hunter.LastNutritionSatisfaction =
+                    (hunter.LastNutritionSatisfaction * foodWeight + preySat * preyWeight)
+                    / (foodWeight + preyWeight);
             else
-                hunter.LastSatisfaction = Math.Min(hunter.LastSatisfaction, preySat);
+                hunter.LastNutritionSatisfaction = preySat;
         }
     }
 
-    // ── growth and death ──────────────────────────────────────────────────────
+    // ── breeding and deprivation mortality ───────────────────────────────────
 
-    private static void ApplyGrowthAndDeath(Tile tile)
+    private const float ExhaustedResourceThreshold = 0.05f;
+    private const float BreedingSatisfactionThreshold = 0.85f;
+
+    private void ApplyPopulationChange(Tile tile)
     {
-        const float GrowthThreshold     = 0.85f;
-        const float StarvationThreshold = 0.50f;
-
         foreach (var pop in tile.Populations)
         {
-            var satisfaction = pop.LastSatisfaction;
+            if (pop.Count == 0) continue;
 
-            if (satisfaction >= GrowthThreshold)
+            if (IsBreedingDay(pop.Species) && pop.LastSatisfaction >= BreedingSatisfactionThreshold)
             {
-                // fractional births accumulate so a very slow reproducer grows at its true rate
-                // rather than the old Math.Ceiling forcing at least +1 every tick. a well-fed
-                // Count=1 pop still grows eventually — it just takes several ticks to bank a whole
-                // individual instead of doubling instantly (preserves the no-stranding invariant).
-                pop.ReproductionAccumulator += pop.Count * pop.Species.ReproductionRate;
+                pop.ReproductionAccumulator += pop.Count * pop.Species.BreedingRate;
                 var births = (int)pop.ReproductionAccumulator;
                 pop.ReproductionAccumulator -= births;
                 pop.Count += births;
                 if (pop.Species.MaxCount > 0 && pop.Count >= pop.Species.MaxCount)
                 {
                     pop.Count = pop.Species.MaxCount;
-                    pop.ReproductionAccumulator = 0f; // at cap, don't hoard growth debt for later
+                    pop.ReproductionAccumulator = 0f;
                 }
-                pop.StarvationAccumulator = 0f;
             }
-            else if (satisfaction <= StarvationThreshold)
-            {
-                var deficit = 1f - satisfaction;
-                pop.StarvationAccumulator += pop.Count * pop.Species.StarvationRate * deficit;
-                var deaths = Math.Min(pop.Count, (int)pop.StarvationAccumulator);
-                pop.StarvationAccumulator -= deaths;
-                pop.Count -= deaths;
-                if (pop.Count == 0) pop.StarvationAccumulator = 0f;
-                pop.ReproductionAccumulator = 0f; // starving — clear any banked growth
-            }
-            else
-            {
-                // neutral zone [0.50, 0.85) — neither grow nor starve; clear both debts
-                pop.StarvationAccumulator = 0f;
-                pop.ReproductionAccumulator = 0f;
-            }
+
+            UpdateDeprivation(
+                pop,
+                pop.LastNutritionSatisfaction,
+                pop.Species.FoodDeprivationToleranceDays,
+                pop.Species.FoodDeprivationMortalityRate,
+                nutrition: true);
+
+            UpdateDeprivation(
+                pop,
+                pop.LastWaterSatisfaction,
+                pop.Species.WaterDeprivationToleranceDays,
+                pop.Species.WaterDeprivationMortalityRate,
+                nutrition: false);
+        }
+    }
+
+    private bool IsBreedingDay(SpeciesDefinition species) =>
+        species.BreedingRate > 0f
+        && species.BreedingSeasons.Contains(State.CurrentSeason)
+        && State.DayOfSeason == Math.Clamp(species.BreedingDayOfSeason, 1, DaysPerSeason);
+
+    private static void UpdateDeprivation(
+        Population pop,
+        float satisfaction,
+        int toleranceDays,
+        float mortalityRate,
+        bool nutrition)
+    {
+        var days = nutrition ? pop.FoodDeprivationDays : pop.WaterDeprivationDays;
+        var accumulator = nutrition ? pop.StarvationAccumulator : pop.DehydrationAccumulator;
+
+        var exhausted = satisfaction <= ExhaustedResourceThreshold;
+        if (exhausted)
+            days++;
+        else
+        {
+            days = Math.Max(0f, days - 2f);
+            accumulator = 0f;
+        }
+
+        if (exhausted && days > toleranceDays && mortalityRate > 0f)
+        {
+            var severity = 1f - satisfaction;
+            accumulator += pop.Count * mortalityRate * severity;
+            var deaths = Math.Min(pop.Count, (int)accumulator);
+            accumulator -= deaths;
+            pop.Count -= deaths;
+            if (pop.Count == 0) accumulator = 0f;
+        }
+
+        if (nutrition)
+        {
+            pop.FoodDeprivationDays = days;
+            pop.StarvationAccumulator = accumulator;
+        }
+        else
+        {
+            pop.WaterDeprivationDays = days;
+            pop.DehydrationAccumulator = accumulator;
         }
     }
 
     // ── water exposure / river drowning ───────────────────────────────────────
 
-    private const float WaterSurvivalThreshold = 15f;
-    private const float WaterExposureMortality = 0.12f;
-    private const float WaterFleeThreshold     = 10f;
+    private const float WaterSurvivalThreshold = 3f;
+    private const float WaterExposureMortality = 0.02f;
+    private const float WaterFleeThreshold     = 2f;
 
     private static void ApplyWaterExposure(Tile tile)
     {
@@ -835,6 +894,12 @@ public class World
         Disease          = source.Disease,
         InfectionLevel   = source.InfectionLevel,
         WaterExposure    = source.WaterExposure,
+        FoodDeprivationDays = source.FoodDeprivationDays,
+        WaterDeprivationDays = source.WaterDeprivationDays,
+        StarvationAccumulator = source.StarvationAccumulator,
+        DehydrationAccumulator = source.DehydrationAccumulator,
+        PredationAccumulator = source.PredationAccumulator,
+        ReproductionAccumulator = source.ReproductionAccumulator,
         Faction          = source.Faction,
     };
 
@@ -852,7 +917,10 @@ public class World
             existing.ImmunityDelta        = (existing.ImmunityDelta        * existing.Count + pop.ImmunityDelta        * pop.Count) / total;
             existing.SizePressure         = (existing.SizePressure         * existing.Count + pop.SizePressure         * pop.Count) / total;
             existing.WaterExposure        = (existing.WaterExposure        * existing.Count + pop.WaterExposure        * pop.Count) / total;
+            existing.FoodDeprivationDays  = (existing.FoodDeprivationDays  * existing.Count + pop.FoodDeprivationDays  * pop.Count) / total;
+            existing.WaterDeprivationDays = (existing.WaterDeprivationDays * existing.Count + pop.WaterDeprivationDays * pop.Count) / total;
             existing.StarvationAccumulator = (existing.StarvationAccumulator * existing.Count + pop.StarvationAccumulator * pop.Count) / total;
+            existing.DehydrationAccumulator = (existing.DehydrationAccumulator * existing.Count + pop.DehydrationAccumulator * pop.Count) / total;
             existing.PredationAccumulator  = (existing.PredationAccumulator  * existing.Count + pop.PredationAccumulator  * pop.Count) / total;
             existing.ReproductionAccumulator = (existing.ReproductionAccumulator * existing.Count + pop.ReproductionAccumulator * pop.Count) / total;
             existing.Count += pop.Count;
@@ -1268,8 +1336,13 @@ public class World
             AcceptedPrey         = parent.AcceptedPrey,
             ByproductRates       = parent.ByproductRates.ToDictionary(kv => kv.Key, kv => kv.Value * sizeIndex),
             CombatStrength       = parent.CombatStrength   * MathF.Sqrt(sizeIndex),
-            ReproductionRate     = parent.ReproductionRate / MathF.Sqrt(sizeIndex),
-            StarvationRate       = parent.StarvationRate,
+            BreedingRate         = parent.BreedingRate / MathF.Sqrt(sizeIndex),
+            BreedingSeasons      = new HashSet<Season>(parent.BreedingSeasons),
+            BreedingDayOfSeason  = parent.BreedingDayOfSeason,
+            FoodDeprivationMortalityRate = parent.FoodDeprivationMortalityRate,
+            FoodDeprivationToleranceDays = parent.FoodDeprivationToleranceDays,
+            WaterDeprivationMortalityRate = parent.WaterDeprivationMortalityRate,
+            WaterDeprivationToleranceDays = parent.WaterDeprivationToleranceDays,
             MigrationThreshold      = parent.MigrationThreshold,
             MigrationCooldownTicks  = parent.MigrationCooldownTicks,
             ViewRadius              = parent.ViewRadius,

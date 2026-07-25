@@ -30,8 +30,10 @@ public static class DemoWorldSeeder
             AsPreyCategory   = PreyCategory.LargeHerbivore,   // armoured; T-Rex takes it only when hadrosaurs are scarce
             HuntDifficulty   = 0.35f,    // armoured and horned — harder to bring down than a hadrosaur
             ByproductRates   = { [ByproductType.Fertilizer] = 0.08f },
-            ReproductionRate = 0.015f,
-            StarvationRate   = 0.015f,
+            BreedingRate     = 0.18f,
+            BreedingSeasons  = [Season.Spring],
+            BreedingDayOfSeason = 35,
+            FoodDeprivationMortalityRate = 0.015f,
             MigrationThreshold = 0.75f,
             WarAggression    = 0.3f,
             CombatStrength   = 1.4f,
@@ -48,8 +50,10 @@ public static class DemoWorldSeeder
             // treetop browser: fruit and upper browse only, can't graze
             EaseOfEating     = { [FoodSubtype.Fruit] = 5f, [FoodSubtype.Browse] = 2f },
             ByproductRates   = { [ByproductType.Fertilizer] = 0.20f },
-            ReproductionRate = 0.008f,
-            StarvationRate   = 0.008f,
+            BreedingRate     = 0.10f,
+            BreedingSeasons  = [Season.Summer],
+            BreedingDayOfSeason = 20,
+            FoodDeprivationMortalityRate = 0.008f,
             MigrationThreshold = 0.6f,
             WarAggression    = 0.1f,
             CombatStrength   = 0.6f,
@@ -69,8 +73,10 @@ public static class DemoWorldSeeder
                                        // so it can't grind a big herd into the vulnerable-tail death spiral
             HuntDifficulty   = 0.25f,  // an agile hadrosaur — the T-Rex misses about a quarter of hunts
             ByproductRates   = { [ByproductType.Fertilizer] = 0.06f },
-            ReproductionRate = 0.014f,   // curbed from 0.02 — unchecked it carpeted the map and razed forests
-            StarvationRate   = 0.015f,
+            BreedingRate     = 0.24f,
+            BreedingSeasons  = [Season.Spring],
+            BreedingDayOfSeason = 25,
+            FoodDeprivationMortalityRate = 0.015f,
             MigrationThreshold = 0.5f,
             MaxCount         = 45,       // per-tile density cap; predation does the real population control
             WarAggression    = 0.5f,
@@ -88,12 +94,14 @@ public static class DemoWorldSeeder
             // tile and migrates toward the nearest herd. Parasaurolophus preferred, Triceratops accepted.
             FoodConsumptionRate  = 0f,
             WaterConsumptionRate = 0f,
-            PreyConsumptionRate  = 0.8f,   // raised from 0.6 to offset Parasaurolophus hunt difficulty (catchability 0.75)
+            PreyConsumptionRate  = 0.015f,
             PreferredPrey    = [PreyCategory.SmallHerbivore],
             AcceptedPrey     = [PreyCategory.LargeHerbivore],
             ByproductRates   = {},
-            ReproductionRate = 0.015f,
-            StarvationRate   = 0.012f,   // persists between hunts rather than crashing when a tile is cleared
+            BreedingRate     = 0.16f,
+            BreedingSeasons  = [Season.Spring],
+            BreedingDayOfSeason = 45,
+            FoodDeprivationMortalityRate = 0.012f,
             MigrationThreshold     = 0.5f,
             MigrationCooldownTicks = 2,
             WarAggression    = 0.4f,
@@ -117,8 +125,11 @@ public static class DemoWorldSeeder
             HerdDefense      = 0.4f,        // a dense swarm can't be fully consumed — a floor so it never wipes
             HuntDifficulty   = 0.25f,
             ByproductRates   = {},
-            ReproductionRate = 0.028f,      // r-selected; ceiling set by grass (food), MaxCount, and dragonflies
-            StarvationRate   = 0.06f,       // crashes fast when the grass is stripped — boom-bust plagues
+            BreedingRate     = 0.20f,
+            BreedingSeasons  = [Season.Spring, Season.Summer],
+            BreedingDayOfSeason = 15,
+            FoodDeprivationMortalityRate = 0.02f,
+            FoodDeprivationToleranceDays = 5,
             MigrationThreshold = 0.5f,
             MaxCount         = 45,          // per-tile swarm cap — keeps a plague moderate
             WarAggression    = 0f,
@@ -135,11 +146,13 @@ public static class DemoWorldSeeder
             // rather than controlling it (locusts are food-limited); MaxCount stops it over-cropping.
             FoodConsumptionRate  = 0f,
             WaterConsumptionRate = 0f,
-            PreyConsumptionRate  = 0.5f,
+            PreyConsumptionRate  = 0.01f,
             PreferredPrey    = [PreyCategory.Insect],
             ByproductRates   = {},
-            ReproductionRate = 0.02f,
-            StarvationRate   = 0.01f,       // sips through lean spells rather than crashing
+            BreedingRate     = 0.70f,
+            BreedingSeasons  = [Season.Summer],
+            BreedingDayOfSeason = 20,
+            FoodDeprivationMortalityRate = 0.01f,
             MigrationThreshold     = 0.5f,
             MigrationCooldownTicks = 1,
             MaxCount         = 18,          // per-tile cap — crops the swarm but can't wipe it (locust herd defense)
@@ -160,8 +173,10 @@ public static class DemoWorldSeeder
             EaseOfEating     = { [FoodSubtype.Fruit] = 5f },
             PollinationBoost = 0.7f,        // up to +70% Fruit regen where a colony works the tile
             ByproductRates   = {},
-            ReproductionRate = 0.02f,
-            StarvationRate   = 0.04f,
+            BreedingRate     = 0.80f,
+            BreedingSeasons  = [Season.Spring, Season.Summer],
+            BreedingDayOfSeason = 10,
+            FoodDeprivationMortalityRate = 0.04f,
             MigrationThreshold = 0.5f,
             MaxCount         = 20,          // per-tile cap — a colony works the tile without stripping it
             WarAggression    = 0f,
@@ -182,8 +197,10 @@ public static class DemoWorldSeeder
             AsPreyCategory   = PreyCategory.SmallMarine,
             HuntDifficulty   = 0.2f,
             ByproductRates   = {},
-            ReproductionRate = 0.015f,
-            StarvationRate   = 0.015f,
+            BreedingRate     = 0.35f,
+            BreedingSeasons  = [Season.Spring],
+            BreedingDayOfSeason = 30,
+            FoodDeprivationMortalityRate = 0.015f,
             MigrationThreshold = 0.6f,
             WarAggression    = 0.2f,
             CombatStrength   = 1.0f,
@@ -206,8 +223,10 @@ public static class DemoWorldSeeder
             AsPreyCategory   = PreyCategory.LargeMarine,
             HuntDifficulty   = 0.2f,
             ByproductRates   = {},
-            ReproductionRate = 0.010f,
-            StarvationRate   = 0.012f,
+            BreedingRate     = 0.20f,
+            BreedingSeasons  = [Season.Summer],
+            BreedingDayOfSeason = 30,
+            FoodDeprivationMortalityRate = 0.012f,
             MigrationThreshold     = 0.55f,
             MigrationCooldownTicks = 4,
             WarAggression    = 0.1f,
@@ -225,13 +244,15 @@ public static class DemoWorldSeeder
             // subsists on raw fish/squid at low ease (partial satisfaction) when prey is absent
             FoodConsumptionRate  = 0.5f,
             EaseOfEating     = { [FoodSubtype.Fish] = 1f, [FoodSubtype.Squid] = 1f },
-            // prey eaten per predator per tick — whole individuals, so a small fraction (~1 kill / 7 ticks)
-            PreyConsumptionRate = 0.19f,  // raised from 0.15 to offset Plesiosaur hunt difficulty
+            // daily prey demand; fractional kills accumulate until they reach a whole individual
+            PreyConsumptionRate = 0.008f,
             PreferredPrey    = [PreyCategory.LargeMarine],
             AcceptedPrey     = [PreyCategory.SmallMarine],
             ByproductRates   = {},
-            ReproductionRate = 0.005f,
-            StarvationRate   = 0.010f,
+            BreedingRate     = 0.12f,
+            BreedingSeasons  = [Season.Summer],
+            BreedingDayOfSeason = 40,
+            FoodDeprivationMortalityRate = 0.010f,
             MigrationThreshold = 0.5f,
             WarAggression    = 0.15f,
             CombatStrength   = 2.5f,
@@ -247,12 +268,12 @@ public static class DemoWorldSeeder
             // singleton apex predator: eats all marine prey; survives on fish/squid/whale between hunts
             FoodConsumptionRate  = 1f,
             EaseOfEating     = { [FoodSubtype.Fish] = 2f, [FoodSubtype.Squid] = 2f, [FoodSubtype.Whale] = 3f },
-            PreyConsumptionRate  = 3.75f,  // raised to offset marine prey hunt difficulty
+            PreyConsumptionRate  = 0.025f,
             PreferredPrey    = [PreyCategory.LargeMarine],
             AcceptedPrey     = [PreyCategory.SmallMarine],
             ByproductRates   = {},
-            ReproductionRate = 0f,
-            StarvationRate   = 0.001f,
+            BreedingRate     = 0f,
+            FoodDeprivationMortalityRate = 0.001f,
             MigrationThreshold     = 0.3f,
             MigrationCooldownTicks = 2,
             WarAggression    = 0f,
@@ -279,11 +300,13 @@ public static class DemoWorldSeeder
             FoodConsumptionRate  = 1f,
             WaterConsumptionRate = 0f,
             EaseOfEating     = { [FoodSubtype.Shrimp] = 4f, [FoodSubtype.Fish] = 3f, [FoodSubtype.Crustacean] = 2f },
-            PreyConsumptionRate  = 0.38f,  // raised from 0.30 to offset Mosasaurus hunt difficulty
+            PreyConsumptionRate  = 0.006f,
             PreferredPrey    = [PreyCategory.SmallMarine],
             ByproductRates   = {},
-            ReproductionRate = 0.008f,
-            StarvationRate   = 0.012f,
+            BreedingRate     = 0.12f,
+            BreedingSeasons  = [Season.Spring, Season.Summer],
+            BreedingDayOfSeason = 25,
+            FoodDeprivationMortalityRate = 0.012f,
             MigrationThreshold     = 0.5f,
             MigrationCooldownTicks = 2,
             WarAggression    = 0.15f,

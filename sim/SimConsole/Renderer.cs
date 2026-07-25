@@ -32,7 +32,6 @@ public class Renderer
 
     private static void RenderHeader(WorldState state, float speed, bool paused)
     {
-        var year = state.Tick / (World.TicksPerSeason * 4) + 1;
         var seasonColor = state.CurrentSeason switch
         {
             Season.Spring => ConsoleColor.Green,
@@ -43,9 +42,9 @@ public class Renderer
         };
 
         Write("EcosystemSim", ConsoleColor.White);
-        Write($"  Tick: {state.Tick,6}", ConsoleColor.DarkGray);
-        Write($"  Y{year} ", ConsoleColor.DarkGray);
-        Write($"{state.CurrentSeason}", seasonColor);
+        Write($"  Day: {state.DayOfYear,3}", ConsoleColor.DarkGray);
+        Write($"  Y{state.Year} ", ConsoleColor.DarkGray);
+        Write($"{state.CurrentSeason} {state.DayOfSeason}/{World.DaysPerSeason}", seasonColor);
         Write($"  Speed: {speed}x");
 
         if (paused)

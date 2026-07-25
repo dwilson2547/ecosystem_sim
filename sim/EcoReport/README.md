@@ -6,10 +6,10 @@ is a number instead of a vibe. Built for balance tuning: change a rate, re-run, 
 
 ```bash
 cd sim
-dotnet run --project EcoReport -c Release                 # 5 runs × 600 ticks, unseeded (random)
+dotnet run --project EcoReport -c Release                 # 5 runs × 1800 days (5 years), unseeded
 dotnet run --project EcoReport -c Release -- --runs 10 --ticks 1000
 dotnet run --project EcoReport -c Release -- --seed 42    # reproducible batch — hold RNG fixed to A/B a param
-dotnet run --project EcoReport -c Release -- --trace 50   # population line every 50 ticks (run 1)
+dotnet run --project EcoReport -c Release -- --trace 90   # population line every 90 days (run 1)
 dotnet run --project EcoReport -c Release -- --csv out.csv # dump run/tick/lineage counts
 ```
 

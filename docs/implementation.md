@@ -9,11 +9,13 @@ architecture overview, see `CLAUDE.md`.
 ## Architecture
 
 The simulation is a **pure state machine**. `World` holds `WorldState` (the only mutable data)
-and exposes two methods:
+and exposes a small command surface:
 
 ```csharp
-world.Tick();                    // advance simulation by one step
-world.Apply(IWorldCommand cmd);  // player intervention
+world.Tick();                         // advance simulation by one day
+world.Apply(IWorldCommand cmd);       // general player intervention
+world.StartScenario(kind);            // configure and seed a scenario
+world.TryApplyScenarioAction(action); // validate a scenario intervention and its budget
 ```
 
 There are no events, no callbacks, no async. The UI drives the tick rate externally. This makes
@@ -21,9 +23,11 @@ testing trivial and makes frontend integration straightforward — just call `Ti
 
 `WorldState` contains:
 - `Tick` — total ticks elapsed
-- `CurrentSeason`, `SeasonTick` — which season and how far through it
+- `CurrentSeason`, `SeasonDay` — derived from the elapsed day count
+- derived `DayOfSeason`, `DayOfYear`, and `Year` calendar values
 - `Map` — the 10×10 `WorldMap` with all tiles
 - `Factions` — list of all factions (including extinct ones)
+- `Scenario` — current Sandbox or Challenge session, including objectives and action points
 
 ---
 
@@ -33,7 +37,7 @@ testing trivial and makes frontend integration straightforward — just call `Ti
 1. `RegenerateResources` — pool regen scaled by season multiplier + fertilizer bonus
 2. `DistributeResources` — proportional resource distribution, sets `LastSatisfaction`
 3. `HuntPrey` — carnivores consume prey populations; sets predator `LastSatisfaction`
-4. `ApplyGrowthAndDeath` — population change based on satisfaction (three-zone: grow ≥ 0.85, die ≤ 0.50)
+4. `ApplyPopulationChange` — seasonal cohort births plus delayed food/water deprivation mortality
 5. `ApplyWaterExposure` — drowning losses for populations stranded on River terrain
 6. `ProduceByproducts` — each individual emits byproducts at species rate
 7. `DecayByproducts` — byproduct pools decay 10%/tick
@@ -48,10 +52,11 @@ testing trivial and makes frontend integration straightforward — just call `Ti
 12. `UpdateFactionRelations` — tension delta, state transitions
 13. `ApplyEvolution` — size and immunity pressure accumulators
 14. `ApplySpeciation` — fork populations that crossed size thresholds into derived species
-15. `State.Tick++` then `AdvanceSeason()`
+15. `State.Tick++` (all calendar values derive from it)
+16. Refresh scenario objectives and resolve an expired challenge
 
 **Why this order matters:**
-- Resources are distributed *before* growth so death/growth reflects current food access
+- Resources are distributed before breeding/deprivation so population change reflects current access
 - Migration happens *after* per-tile loop so a pop can't migrate and then immediately consume at
   its new tile in the same tick
 - Disease exposure is collected in one pass then applied — prevents tile-loop order from making
@@ -207,14 +212,12 @@ and cannot migrate onto land.
 water nearby (Swamp has a water pool but is still walkable land). No species can live there
 indefinitely:
 ```
-if on River: WaterExposure++; if WaterExposure > 15, lose 12% of Count that tick
+if on River: WaterExposure++; if WaterExposure > 3, lose 2% of Count that day
 else:        WaterExposure = max(0, WaterExposure - 1)   // recovers once they leave
 ```
-A population can wade in to drink for a while, but past `WaterSurvivalThreshold = 15` ticks it
-starts drowning at `WaterExposureMortality = 0.12`/tick (both constants in `World.cs`) — roughly
-half a season of grace before attrition sets in, and death within a few more ticks if they don't
-leave. `WaterExposure` carries through migration forks and is blended (count-weighted) on merge,
-same as `SizeIndex`.
+A population attempts to flee after 2 days. Past `WaterSurvivalThreshold = 3`, gradual attrition
+begins at `WaterExposureMortality = 0.02` per day. `WaterExposure` carries through migration forks
+and is blended (count-weighted) on merge, same as `SizeIndex`.
 
 Resource satisfaction alone would never rescue a population from this — a River tile can have
 abundant food and water, so satisfaction reads 1.0 the entire time it's drowning. `Migrate()`
@@ -229,8 +232,9 @@ retries the escape every subsequent tick.
 
 ## Seasons
 
-Four seasons, 25 ticks each, cycling indefinitely. Stored in `WorldState.CurrentSeason` and
-`WorldState.SeasonTick`. Advancing in `AdvanceSeason()` after each tick.
+One tick is one day. Four 90-day seasons form a 360-day year and cycle indefinitely. Calendar state
+is derived from `WorldState.Tick`, with one-based `DayOfSeason`, `DayOfYear`, and `Year` values
+exposed for frontends. The elapsed day count is the single calendar source of truth.
 
 | Season | Food mult | Water mult |
 |--------|-----------|------------|
@@ -243,8 +247,7 @@ Winter is the primary population pressure event. A species that overexpanded in 
 face starvation in Winter. Water-dependent species (Triceratops, Alamosaurus) face additional
 stress from nearly-frozen water sources.
 
-`World.TicksPerSeason = 25` is a public constant so the renderer can compute the current year
-(`tick / (TicksPerSeason × 4) + 1`).
+`World.DaysPerSeason = 90` and `World.DaysPerYear = 360` are public constants.
 
 ---
 
@@ -252,31 +255,25 @@ stress from nearly-frozen water sources.
 
 `SpeciesDefinition` is immutable shared data. `Population` is a live, mutable group on one tile.
 
-**Growth — three-zone model with fractional accumulators:**
+**Seasonal breeding.** Species define `BreedingSeasons`, `BreedingDayOfSeason`, and a
+`BreedingRate` (the fraction of the current population added in that cohort). A cohort is produced
+only on the configured day and only when overall satisfaction is at least 0.85:
 ```csharp
-if (satisfaction >= 0.85f)                          // abundance zone
-    ReproductionAccumulator += count × ReproductionRate
-    births = (int)ReproductionAccumulator           // whole individuals only
+if (isBreedingDay && satisfaction >= 0.85f)
+    ReproductionAccumulator += count × BreedingRate
+    births = (int)ReproductionAccumulator
     ReproductionAccumulator -= births
     count += births
-    StarvationAccumulator = 0f
-else if (satisfaction <= 0.50f)                     // starvation zone
-    StarvationAccumulator += count × StarvationRate × (1 - satisfaction)
-    deaths = min(count, (int)StarvationAccumulator)
-    StarvationAccumulator -= deaths
-    count -= deaths
-    ReproductionAccumulator = 0f
-// neutral zone [0.50, 0.85): neither grow nor shrink; both accumulators cleared
 ```
-Births and starvation deaths **bank fractionally** across ticks and only apply a whole individual
-once the running total crosses 1 — a slow reproducer or lightly-starved pop changes at its true rate
-instead of being rounded up to ±1 every tick, while a `Count=1` pop still grows/dies after enough
-sustained ticks (no single-individual limbo). Growth debt is cleared whenever a pop leaves the growth
-zone, so a brief spell of abundance doesn't bank a birth that lands ticks later during scarcity.
-Predation deaths use the same shape (`PredationAccumulator`, see the predation section).
+Fractional cohort remainders carry into the species' next breeding event, so small populations can
+still reproduce without being rounded up every day.
 
-The neutral zone lets species that accept "adequate" food (ease 3/5) stabilize instead of being
-perpetually starved. An accepted-food species can hold a tile even when better food is scarce.
+**Deprivation mortality.** Nutrition and water satisfaction are tracked independently. Pressure
+only accumulates when a required resource is effectively exhausted (≤5% satisfaction), not merely
+scarce. `FoodDeprivationToleranceDays` and `WaterDeprivationToleranceDays` give populations time to
+migrate. Once a tolerance is exceeded, fractional deaths accumulate at the corresponding daily
+mortality rate. Any meaningful supply causes pressure to recover and clears pending mortality debt.
+Predation remains immediate and uses its separate `PredationAccumulator`.
 
 Dead populations (`Count = 0`) **stay on their tile** forever. They're rendered as `[EXTINCT]`
 and skipped by all simulation logic. Removing them would erase run history.
@@ -518,6 +515,34 @@ base species; propagated automatically to derived species.
 
 ---
 
+## Scenarios and interventions
+
+`ScenarioFactory.Create()` configures a session without adding UI dependencies to the engine.
+Sandbox has unlimited time and free actions. Locust Plague lasts `3 × World.DaysPerYear`, starts
+with 10 action points, and seeds 12 Plains tiles with 42 locusts each while reducing Plains Graze
+to at most 30% capacity.
+
+| Objective | Target |
+|-----------|--------|
+| Dinosaur survival | Triceratops, Alamosaurus, Parasaurolophus, and Tyrannosaurus all remain alive |
+| Locust control | Total living locust population ≤ 500 |
+| Plains recovery | Average Plains Graze amount/capacity ≥ 25% |
+
+`IScenarioAction` exposes `Name`, `Cost`, `CanExecute(WorldState, out error)`, and
+`Execute(WorldState)`. `World.TryApplyScenarioAction()` rejects missing or inactive scenarios,
+invalid targets, completed challenges, and insufficient budgets before spending points.
+
+| Action | Cost | Effect |
+|--------|------|--------|
+| `CullLocustsAction` | 1 AP | Removes 99% of locusts within two hexes of the selected tile |
+| `RestoreGrassAction` | 2 AP | Refills Plains Graze pools within four hexes |
+| `SeedMeganeuraAction` | 3 AP | Adds five Meganeura to a selected dry-land tile |
+
+Objective progress refreshes after every tick and successful action. Challenge status becomes
+`Won` only if all objectives are met when its duration expires; otherwise it becomes `Lost`.
+
+---
+
 ## Player commands
 
 All implement `IWorldCommand` with a single `Execute(WorldState)` method.
@@ -557,7 +582,7 @@ Ground/Brush/Canopy — see `docs/food-types.md`.
 - Density drain (`1.15^(count/5)`) inflates demand at higher counts — tests asserting an exact
   satisfaction value should use small counts (≤10) or a correspondingly large pool so the
   multiplier stays negligible.
-- Faction tests use `ReproductionRate = 0, StarvationRate = 0` to freeze population so combat
+- Faction tests disable breeding and deprivation mortality to freeze population so combat
   math is predictable.
 - Disease tests pass `spread: 0f` to isolate single-population infection without spread.
 - The `Tick_ResourcePoolReplenishesEachTick` test uses `Assert.True(amount > 0)` rather than

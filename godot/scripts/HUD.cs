@@ -48,6 +48,10 @@ public partial class HUD : CanvasLayer
         resetBtn.Pressed += () => SimManager.Instance.Reset();
         vbox.AddChild(resetBtn);
 
+        var scenarioBtn = new Button { Text = "Choose scenario" };
+        scenarioBtn.Pressed += SimManager.Instance.RequestScenarioSelection;
+        vbox.AddChild(scenarioBtn);
+
         SimManager.Instance.Ticked        += Refresh;
         SimManager.Instance.PausedChanged += OnPausedChanged;
         SimManager.Instance.WorldReset    += Refresh;
@@ -59,9 +63,9 @@ public partial class HUD : CanvasLayer
         var sim   = SimManager.Instance;
         var state = sim.World.State;
 
-        _tickLabel.Text   = $"Tick    {state.Tick}";
-        _yearLabel.Text   = $"Year    {state.Tick / (World.TicksPerSeason * 4) + 1}";
-        _seasonLabel.Text = state.CurrentSeason.ToString();
+        _tickLabel.Text   = $"Day     {state.DayOfYear}";
+        _yearLabel.Text   = $"Year    {state.Year}";
+        _seasonLabel.Text = $"{state.CurrentSeason}  {state.DayOfSeason}/{World.DaysPerSeason}";
         _seasonLabel.AddThemeColorOverride("font_color", SeasonColor(state.CurrentSeason));
         _weatherLabel.Text = WeatherText(state.CurrentWeather);
         _weatherLabel.AddThemeColorOverride("font_color", WeatherColor(state.CurrentWeather));

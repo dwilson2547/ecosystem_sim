@@ -11,7 +11,7 @@ using SimConsole;
 var opts = Options.Parse(args);
 if (opts is null) return 0;   // --help already printed
 
-Console.WriteLine($"Ecology report — {opts.Runs} run(s) × {opts.Ticks} ticks"
+Console.WriteLine($"Ecology report — {opts.Runs} run(s) × {opts.Ticks} days"
                 + (opts.Seed is { } sv ? $", seeded {sv}..{sv + opts.Runs - 1}" : ", unseeded")
                 + (opts.TraceInterval > 0 ? $", trace every {opts.TraceInterval}" : ""));
 Console.WriteLine(new string('─', 78));
@@ -173,7 +173,7 @@ sealed record Options(int Ticks, int Runs, int TraceInterval, string? CsvPath, i
 {
     public static Options? Parse(string[] args)
     {
-        int ticks = 600, runs = 5, trace = 0;
+        int ticks = World.DaysPerYear * 5, runs = 5, trace = 0;
         int? seed = null;
         string? csv = null;
         for (var i = 0; i < args.Length; i++)
@@ -182,10 +182,10 @@ sealed record Options(int Ticks, int Runs, int TraceInterval, string? CsvPath, i
                 case "-h" or "--help":
                     Console.WriteLine(
                         "EcoReport — headless ecology stability report for the demo world\n\n"
-                      + "  --ticks N    ticks per run (default 600)\n"
+                      + "  --ticks N    days per run (default 1800 / 5 years)\n"
                       + "  --runs N     independent runs to aggregate (default 5)\n"
                       + "  --seed N     reproducible batch: run r uses seed N+r (default: unseeded/random)\n"
-                      + "  --trace N    print a population line every N ticks of run 1 (default off)\n"
+                      + "  --trace N    print a population line every N days of run 1 (default off)\n"
                       + "  --csv PATH   dump per-run/tick/lineage counts to CSV\n");
                     return null;
                 case "--ticks": ticks = int.Parse(args[++i]); break;

@@ -5,8 +5,8 @@ trade byproducts, evolve, catch diseases, and migrate across a tile-based world.
 a god-figure who seeds the world and intervenes in real time. All behavior is emergent — nothing
 is scripted.
 
-**Current state:** engine-complete simulation library + Godot 4.7 frontend scaffold. Terminal
-prototype (`SimConsole`) still works but the real UI is in `godot/`.
+**Current state:** engine-complete simulation library + playable Godot 4.7 frontend with Sandbox
+and Locust Plague challenge modes. Terminal prototype (`SimConsole`) still works.
 
 ---
 
@@ -14,7 +14,7 @@ prototype (`SimConsole`) still works but the real UI is in `godot/`.
 
 - **Language:** C# 12, .NET 8
 - **Engine layer:** `EcosystemSim` — a class library, zero UI dependencies, engine-agnostic
-- **Tests:** xUnit 3, `EcosystemSim.Tests` — 85 tests, run `dotnet test` from `sim/`
+- **Tests:** xUnit 3, `EcosystemSim.Tests` — 97 tests, run `dotnet test` from `sim/`
 - **Console UI:** `SimConsole` — terminal renderer / prototype; run from `sim/`
 - **Game UI:** Godot 4.7 (.NET), lives in `godot/`; references `EcosystemSim` via ProjectReference
 
@@ -30,13 +30,15 @@ godot/                      # Godot 4.7 game frontend
 └── scripts/
     ├── SimManager.cs       # Autoload singleton: owns World, drives tick timer
     ├── DemoWorldSeeder.cs  # Creates the demo world for the Godot build
-    ├── SimMain.cs          # Root node: spawns camera, renderer, HUD, FactionPanel, TileInfoPanel
+    ├── SimMain.cs          # Root node: spawns map, HUD, panels, and scenario selection overlay
     ├── HexMapRenderer.cs   # Instantiates HexTile × 100; PixelToTile + SelectTile
     ├── HexTile.cs          # One hex cell: Polygon2D terrain + pop Label + selection border
     ├── CameraController.cs # Camera2D: MMB-drag pan, scroll-wheel zoom
-    ├── HUD.cs              # Tick / season / year / speed overlay
+    ├── HUD.cs              # Day / season / year / speed overlay
     ├── FactionPanel.cs     # Left-side panel: faction list, population summaries, relations
-    └── TileInfoPanel.cs    # Right-side panel: terrain, resources, population details
+    ├── ScenarioPanel.cs    # Challenge timer, AP budget, objectives, and final result
+    ├── ScenarioSelectionOverlay.cs # Startup Sandbox/Challenge mode picker
+    └── TileInfoPanel.cs    # Right-side tile details and intervention controls
 
 sim/
 ├── EcosystemSim/           # The simulation engine (class library)
@@ -58,10 +60,14 @@ sim/
 │   ├── Season.cs           # Enum: Spring/Summer/Autumn/Winter
 │   ├── Weather.cs          # Enum: Normal/Rainy/Drought (world-level regen modifier over seasons)
 │   ├── Disease.cs          # Disease blueprint (spread, mortality, recovery rates)
+│   ├── ScenarioSession.cs  # Active mode, objectives, budget, duration, and result
+│   ├── ScenarioFactory.cs  # Scenario setup and Locust Plague outbreak seeding
+│   ├── *Action.cs          # Validated, tile-targeted scenario interventions
 │   └── *Command.cs         # IWorldCommand implementations for player interventions
 │
 ├── EcosystemSim.Tests/     # xUnit tests
-│   └── WorldTests.cs       # 85 tests; isolated worlds, no seeder dependency
+│   ├── WorldTests.cs       # Simulation-system tests; isolated worlds, no seeder dependency
+│   └── ScenarioTests.cs    # Scenario setup, objective, budget, and action tests
 │
 ├── SimConsole/             # Terminal prototype
 │   ├── Program.cs          # Input loop + tick scheduling
@@ -78,15 +84,16 @@ sim/
 
 ```bash
 cd sim
-dotnet test                        # run all 85 tests
+dotnet test                        # run all 97 tests
 dotnet run --project SimConsole    # terminal prototype
 dotnet run --project EcoReport -c Release   # headless ecology stability report (balance tuning)
 ```
 
 SimConsole controls: `[Space]` pause, `[← →]` speed, `[D]` disease, `[T]` trade, `[Q]` quit.
 
-Godot: open `godot/project.godot` in Godot 4.7. Controls: `Space` pause, `+`/`-` speed,
-middle-mouse drag to pan, scroll to zoom. See `docs/godot-frontend.md` for full details.
+Godot: open `godot/project.godot` in Godot 4.7, choose Sandbox or Locust Plague, then use
+`Space` to pause, `+`/`-` for speed, middle-mouse drag to pan, and scroll to zoom. See
+`docs/godot-frontend.md` for full details.
 
 ---
 
@@ -118,9 +125,9 @@ capacity for 90 sustained ticks (`Tile.DegradationPressure`, `World.ApplyTerrain
 Sustained heavy browsing by Alamosaurus herds can permanently clear a forest into grassland.
 
 ### 3. Seasons
-25-tick seasons in order Spring→Summer→Autumn→Winter. Multipliers applied to `RegenPerTick`
-each tick. Winter is brutal (0.3× food, 0.2× water). Spring is lush (1.3× food, 1.4× water).
-Current season shown in the header. Stored in `WorldState.CurrentSeason`.
+One tick is one day. Four 90-day seasons form a 360-day year in
+Spring→Summer→Autumn→Winter order. Multipliers apply to daily regeneration. The HUD exposes year,
+day of year, season, and day within the season.
 
 ### 3a. Weather
 A world-level regen multiplier layered **on top of** seasons (they stack multiplicatively). Runs in
@@ -135,14 +142,10 @@ weather is.
 ### 4. Populations & species
 A `SpeciesDefinition` is a blueprint. A `Population` is a live group on a specific tile. The
 same species can have multiple populations (same or different tiles, same or different factions).
-Population grows on full satisfaction, shrinks (starvation death) on deficit. Births, starvation
-deaths, and predation deaths all accumulate fractionally across ticks (`ReproductionAccumulator` /
-`StarvationAccumulator` / `PredationAccumulator`) and only apply a whole individual once the running
-total crosses 1 — so a slow reproducer or a thinned prey herd changes at its true rate instead of
-being rounded up to ±1 every tick, while a Count=1 pop still grows/dies eventually (no limbo).
-
-Population grows on full satisfaction (sat≥0.85), shrinks in the starvation zone (sat≤0.50), and
-holds stable in between — the neutral zone [0.50, 0.85) lets accepted-food species stabilize.
+Species reproduce in configured seasonal cohorts (`BreedingSeasons`, `BreedingDayOfSeason`,
+`BreedingRate`) and only when satisfaction is at least 0.85. Nutrition and water deprivation are
+tracked independently. Mortality begins only when a required resource is effectively exhausted
+(≤5% satisfaction) beyond the species' tolerance period, giving populations time to migrate.
 
 `EaseOfEating` is a `Dictionary<FoodSubtype, float>` (0–5 scale) on each `SpeciesDefinition`. Land
 demo species: Triceratops (Graze 5, Browse 3, Fruit 1), Parasaurolophus (Browse 5, Graze 3, Fruit 2),
@@ -157,8 +160,8 @@ units. Alamosaurus is the keystone fertilizer producer (0.20/tick per individual
 
 ### 6. Migration
 Two independent triggers, checked in `Migrate()` in this order:
-1. **Flee from water** — a population stranded on River terrain past `WaterFleeThreshold` (10
-   ticks) evacuates entirely to the best non-River neighbor, overriding `MigrationThreshold`
+1. **Flee from water** — a population stranded on River terrain for 2 days evacuates entirely to
+   the best non-River neighbor, overriding `MigrationThreshold`
    outright (see §8 — a River tile can look fully satisfied while it's drowning them).
 2. **Resource scarcity** — satisfaction below `MigrationThreshold`. The population moves toward
    whichever of Food, Water, or Prey is most lacking. For Food, "best neighbor" is ease-weighted
@@ -186,8 +189,8 @@ satisfaction craters long before the raw pool is empty, pushing populations to d
 ### 8. Water exposure ("can't live in the water")
 River is the one terrain that counts as actually *being in the water* (Swamp is walkable
 wetland, not submerged). A population accumulates `WaterExposure` while on River terrain; past
-`WaterSurvivalThreshold` (15 ticks) it starts drowning at 12%/tick. Leaving decays the counter
-back down — a quick drink is harmless, camping there is not.
+`WaterSurvivalThreshold` (3 days) it starts losing 2%/day. It attempts to flee after 2 days;
+leaving decays the counter back down, so a brief crossing is harmless.
 
 ### 9. Predation (carnivore mechanics)
 Carnivore species set `PreyConsumptionRate` and declare `PreferredPrey` / `AcceptedPrey` as
@@ -230,7 +233,7 @@ Parasaurolophus=SmallHerbivore, Triceratops=LargeHerbivore, Mosasaurus=SmallMari
 ### 9a. Insects
 A self-contained insect guild on the land side (`PreyCategory.Insect`): **Locust** — an r-selected
 grazing pest that swarms the plains and competes with the big grazers for `Graze`, with `HerdDefense`
-so a dense swarm is never fully consumed and a fast `StarvationRate` so it crashes when the grass is
+so a dense swarm is never fully consumed and a short deprivation tolerance so it crashes when grass is
 stripped (boom-bust plagues, oscillating ~40→2000+); and **Meganeura** — a giant dragonfly, an
 obligate insectivore capped small (`MaxCount`) so it lives off the swarm's margin rather than
 controlling it (locusts are food-limited, not predation-limited). Adding the locust competitor also
@@ -294,6 +297,17 @@ unchanged — evolving bigger doesn't change what a species can physically eat).
 to 1.0 on the new baseline. Naming tiers: base → Greater/Lesser → Giant/Dwarf. If two populations
 independently reach the same tier, they share one definition. See **`docs/speciation.md`**.
 
+### 15. Scenarios and interventions
+`World.StartScenario()` creates either an unrestricted Sandbox session or the three-year Locust
+Plague challenge. Challenge state lives in `WorldState.Scenario`: remaining days, a shared 10-point
+budget, objective progress, and won/lost status. The plague starts with 12 Plains outbreaks of 42
+locusts and suppresses Plains grass to at most 30%.
+
+Victory requires all four land dinosaur lineages to survive, locusts to finish at 500 or fewer,
+and average Plains Graze to finish at 25% or more. Tile-targeted `IScenarioAction`s currently cull
+99% of locusts within two hexes for 1 AP, fully restore Plains Graze within four hexes for 2 AP,
+or seed five Meganeura for 3 AP. Sandbox uses the same actions without costs or a time limit.
+
 ---
 
 ## Tick order (per `World.Tick()`)
@@ -304,7 +318,7 @@ Per tile:
    (ease-weighted by FoodSubtype × availability); both feed into `LastSatisfaction`; density drain
    inflates demand
 3. `HuntPrey` — predators consume prey populations; sets predator `LastSatisfaction`
-4. `ApplyGrowthAndDeath` — grow if sat≥0.85, die if sat≤0.50, hold in [0.50,0.85)
+4. `ApplyPopulationChange` — seasonal cohorts plus delayed nutrition/water deprivation mortality
 5. `ApplyWaterExposure` — drowning losses for populations stranded on River terrain
 6. `ProduceByproducts` — count × species rate
 7. `DecayByproducts` — 10%/tick
@@ -320,7 +334,7 @@ Global:
 13. `UpdateFactionRelations` — tension delta, state transitions
 14. `ApplyEvolution` — pressure accumulators + threshold crossings
 15. `ApplySpeciation` — fork populations that crossed size thresholds into derived species
-16. `State.Tick++`, `AdvanceSeason()`
+16. `State.Tick++` — season/day/year values derive from elapsed days
 
 ---
 
@@ -334,11 +348,8 @@ Global:
   within the tile loop would make disease spread order-dependent.
 - **No global resource pools** — populations can only consume what's on their tile. Geography
   matters.
-- **Fractional births/deaths, no limbo** — growth, starvation, and predation each bank a fractional
-  running total (`ReproductionAccumulator` / `StarvationAccumulator` / `PredationAccumulator`) and
-  apply whole individuals only when it crosses 1. A naive `(int)(1 × 0.05) = 0` would strand Count=1
-  pops forever; the accumulator instead grows/kills them after enough sustained ticks, at the true
-  rate rather than forcing ±1 every tick. Growth debt clears whenever a pop leaves the growth zone.
+- **Fractional population change, no rounding spikes** — seasonal births, deprivation deaths, and
+  predation bank fractional totals and apply whole individuals only when an accumulator crosses 1.
 - **Terrain is static** — set during world seeding, never changes at runtime except via terrain
   degradation. Seasonal and fertilizer modifiers apply at tick time, not to the terrain definition.
 - **`Population.EffectiveFoodDemand` / `EffectiveWaterDemand` / `EffectivePreyDemand`** — food and
@@ -347,8 +358,8 @@ Global:
   is never consumed regardless of how much sits there unconsumed.
 - **Ocean biome barrier** — `TerrainStats.IsOcean()` prevents migration across the land/ocean
   boundary. Marine and terrestrial species occupy entirely disjoint migration spaces.
-- **Three-zone growth** — sat≥0.85 grows, sat≤0.50 starves, [0.50,0.85) neutral hold. The
-  neutral zone lets accepted-food species stabilize rather than perpetually starving.
+- **Exhaustion before deprivation death** — partial supply can limit breeding and trigger migration,
+  but food/water mortality only begins below 5% satisfaction after the configured tolerance period.
 - **Prey two-pass mirrors food** — preferred prey at full satisfaction, accepted prey at 2/3 sat.
   A Holling type-III functional response (`count²/(count+K)`) makes only a density-dependent fraction
   of a herd huntable, so a predator can't wipe a tile in one pass; prey deaths accumulate fractionally
@@ -375,26 +386,28 @@ what it needs on specific tiles. Key helpers in `WorldTests.cs`:
 
 ## What's next
 
-1. **Godot frontend polish** — ocean tile rendering, disease/trade hotkeys, population history graphs
-2. **Predator-prey balance tuning** — the refuge/scatter/accumulator *mechanisms* are in place but
+1. **More challenge scenarios** — reuse the scenario/objective/action framework for drought,
+   disease, predator imbalance, and restoration objectives
+2. **Godot frontend polish** — ocean tile rendering, disease/trade hotkeys, population history graphs
+3. **Predator-prey balance tuning** — the refuge/scatter/accumulator *mechanisms* are in place but
    deliberately un-tuned: in a sparse-predator sandbox the equilibrium currently favours prey. Tune
-   `PreyRefugeHalfSaturation`, `ScatterMinHerd`, Kronosaurus `PreyConsumptionRate`/`ReproductionRate`,
+   `PreyRefugeHalfSaturation`, `ScatterMinHerd`, Kronosaurus daily prey demand / `BreedingRate`,
    and per-species `MigrationCooldownTicks` (skittishness) once the roster grows
-3. **More land predators** — the Tyrannosaurus apex is in (§9); a second tier (nimble pack hunter
+4. **More land predators** — the Tyrannosaurus apex is in (§9); a second tier (nimble pack hunter
    pressuring hadrosaurs/juveniles, or a scavenger niche) would make land predation less monolithic
-4. **Procedural map generation** — rivers, biomes, mountain ranges; replaces the hardcoded
+5. **Procedural map generation** — rivers, biomes, mountain ranges; replaces the hardcoded
    terrain string in `WorldSeeder`
-5. **Player interventions** — meteor strike, terraforming, population seeding mid-run
-6. **Symbiosis + real factions** — the current faction layer is provisional scaffolding. A true
+6. **More player interventions** — meteor strikes, terraforming, and broader population seeding
+7. **Symbiosis + real factions** — the current faction layer is provisional scaffolding. A true
    faction should emerge from **symbiotic relationships between different dino types**, not be assigned
    at seed time. This is the gateware for the rest of the faction/diplomacy work below.
-7. **Territorial conflict** (replaces declarative war, see §12) — populations migrate into each other
+8. **Territorial conflict** (replaces declarative war, see §12) — populations migrate into each other
    and brawl on a shared tile until one retreats, instead of accumulating tension → AtWar. Build with
    the faction/symbiosis work; re-enable or delete `DiplomaticWarEnabled` at that point.
-8. **Active apex predators** — the Megalodon currently survives fully on fish and never migrates to
+9. **Active apex predators** — the Megalodon currently survives fully on fish and never migrates to
    hunt (sat stays at 1.0). If apexes should exert top-down control, fish must not *fully* sate a
    hunter (lower food ease / raise `MigrationThreshold`, or a hunger-to-hunt drive).
-9. **Faction memory** — grudges, reputation, vassal relationships
+10. **Faction memory** — grudges, reputation, vassal relationships
 
 See `docs/implementation.md` for mechanics of every implemented system,
 `docs/food-types.md` for typed food subtype mechanics, and

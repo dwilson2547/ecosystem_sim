@@ -5,8 +5,11 @@ public class Population
     public required SpeciesDefinition Species { get; set; }
     public int Count { get; set; }
 
-    // worst resource satisfaction seen this tick (0–1), reset each tick
-    public float LastSatisfaction { get; internal set; } = 1f;
+    // Nutrition includes plant food and/or prey. Water is tracked separately so one missing resource
+    // does not incorrectly accumulate both hunger and dehydration.
+    public float LastNutritionSatisfaction { get; internal set; } = 1f;
+    public float LastWaterSatisfaction { get; internal set; } = 1f;
+    public float LastSatisfaction => Math.Min(LastNutritionSatisfaction, LastWaterSatisfaction);
 
     // set by Tile.AddPopulation / Tile.RemovePopulation during placement and migration
     public Tile? CurrentTile { get; internal set; }
@@ -43,8 +46,13 @@ public class Population
     // set during Migrate(); cleared at the start of every tick
     public bool JustMigrated { get; internal set; }
 
-    // fractional starvation deaths carried across ticks; applied when accumulator ≥ 1
+    // consecutive days with effectively exhausted nutrition/water; recover when supplies return
+    public float FoodDeprivationDays { get; set; }
+    public float WaterDeprivationDays { get; set; }
+
+    // fractional deprivation deaths carried across ticks; applied when accumulator ≥ 1
     public float StarvationAccumulator { get; set; }
+    public float DehydrationAccumulator { get; set; }
 
     // fractional predation deaths carried across ticks; applied when accumulator ≥ 1.
     // lets a functional response take sub-1 prey per tick without a rounding-up wipeout.

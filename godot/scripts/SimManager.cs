@@ -12,6 +12,8 @@ public partial class SimManager : Node
     public static SimManager Instance { get; private set; } = null!;
 
     public World World { get; private set; } = null!;
+    public ScenarioKind? CurrentScenarioKind { get; private set; }
+    public bool HasStarted => CurrentScenarioKind.HasValue;
 
     // Seconds between ticks — 2.0 by default (intentionally slow; tune in settings later)
     [Export] public float TickInterval { get; set; } = 2.0f;
@@ -28,11 +30,14 @@ public partial class SimManager : Node
     [Signal] public delegate void TickedEventHandler();
     [Signal] public delegate void PausedChangedEventHandler(bool paused);
     [Signal] public delegate void WorldResetEventHandler();
+    [Signal] public delegate void ScenarioChangedEventHandler();
+    [Signal] public delegate void ScenarioSelectionRequestedEventHandler();
 
     public override void _Ready()
     {
         Instance = this;
         World    = DemoWorldSeeder.Create();
+        Paused   = true;
     }
 
     public override void _Process(double delta)
@@ -43,15 +48,54 @@ public partial class SimManager : Node
         _elapsed = 0f;
         World.Tick();
         EmitSignal(SignalName.Ticked);
+        if (World.State.Scenario is { IsChallenge: true, Status: not ScenarioStatus.Active })
+            Paused = true;
     }
 
-    public void TogglePause() => Paused = !_paused;
+    public void TogglePause()
+    {
+        if (!HasStarted) return;
+        if (World.State.Scenario is { IsChallenge: true, Status: not ScenarioStatus.Active }) return;
+        Paused = !_paused;
+    }
+
+    public void StartScenario(ScenarioKind kind)
+    {
+        _elapsed = 0f;
+        World = DemoWorldSeeder.Create();
+        World.StartScenario(kind);
+        CurrentScenarioKind = kind;
+        GD.Print($"[Scenario] started {kind}");
+        EmitSignal(SignalName.WorldReset);
+        EmitSignal(SignalName.ScenarioChanged);
+        Paused = false;
+    }
 
     public void Reset()
     {
-        _elapsed = 0f;
-        World    = DemoWorldSeeder.Create();
-        EmitSignal(SignalName.WorldReset);
+        if (CurrentScenarioKind is { } kind)
+            StartScenario(kind);
+    }
+
+    public void RequestScenarioSelection()
+    {
+        Paused = true;
+        EmitSignal(SignalName.ScenarioSelectionRequested);
+    }
+
+    public ScenarioActionResult TryApplyScenarioAction(IScenarioAction action)
+    {
+        var result = World.TryApplyScenarioAction(action);
+        GD.Print($"[Scenario] action {action.Name}: {(result.Success ? "success" : "failed")} — {result.Message}");
+        if (result.Success)
+            CallDeferred(MethodName.NotifyScenarioActionChanged);
+        return result;
+    }
+
+    private void NotifyScenarioActionChanged()
+    {
+        EmitSignal(SignalName.Ticked);
+        EmitSignal(SignalName.ScenarioChanged);
     }
 
     // Each call shrinks/grows the tick interval by a fixed step

@@ -9,7 +9,9 @@ public class WorldTests
         Name = name,
         FoodConsumptionRate = 1f,
         ReproductionRate = 0.1f,
-        StarvationRate = 0.5f
+        BreedingDayOfSeason = 1,
+        StarvationRate = 0.5f,
+        FoodDeprivationToleranceDays = 14,
     };
 
     private static ResourcePool AbundantFood(float amount = 10_000f) => new()
@@ -36,10 +38,12 @@ public class WorldTests
         var world = new World();
         world.Tick();
         Assert.Equal(1, world.State.Tick);
+        Assert.Equal(2, world.State.DayOfYear);
+        Assert.Equal(1, world.State.Year);
     }
 
     [Fact]
-    public void Tick_PopulationGrowsWhenResourcesAbundant()
+    public void Tick_PopulationBreedsOnItsSeasonalBreedingDay()
     {
         var world = new World();
         var tile = world.State.Map.GetTile(0, 0);
@@ -52,16 +56,15 @@ public class WorldTests
     }
 
     [Fact]
-    public void Tick_SlowReproducerAccumulatesBirthsInsteadOfForcingPlusOne()
+    public void Tick_SeasonalBreedingAccumulatesFractionalBirths()
     {
-        // ReproductionRate × Count = 0.05 per tick — under the old Math.Ceiling this rounded up to
-        // +1 individual every single tick (doubling a Count=1 pop instantly). It must now bank the
-        // fractional births and only add a whole individual once they cross 1.0.
         var species = new SpeciesDefinition
         {
             Name = "SlowBreeder",
             FoodConsumptionRate = 1f,
-            ReproductionRate = 0.05f,
+            BreedingRate = 0.25f,
+            BreedingSeasons = [Season.Spring, Season.Summer, Season.Autumn, Season.Winter],
+            BreedingDayOfSeason = 1,
             StarvationRate = 0.5f
         };
 
@@ -72,14 +75,12 @@ public class WorldTests
         tile.Populations.Add(pop);
 
         world.Tick();
-        Assert.Equal(1, pop.Count);                     // no rounding-up jump on a single tick
+        Assert.Equal(1, pop.Count);
         Assert.True(pop.PredationAccumulator == 0f);
-        Assert.InRange(pop.ReproductionAccumulator, 0.04f, 0.06f);
+        Assert.InRange(pop.ReproductionAccumulator, 0.24f, 0.26f);
 
-        // sustained abundance eventually banks a whole individual — growth still happens, just at
-        // the true rate rather than every tick (preserves the no-stranding invariant).
-        for (var i = 0; i < 25; i++) world.Tick();
-        Assert.True(pop.Count >= 2, $"expected growth over 26 ticks, got {pop.Count}");
+        for (var i = 0; i < World.DaysPerSeason * 3; i++) world.Tick();
+        Assert.Equal(2, pop.Count);
     }
 
     [Fact]
@@ -90,9 +91,139 @@ public class WorldTests
         tile.Resources.Add(EmptyFood());
         tile.Populations.Add(new Population { Species = BasicSpecies(), Count = 100 });
 
-        world.Tick();
+        for (var i = 0; i <= BasicSpecies().FoodDeprivationToleranceDays; i++)
+            world.Tick();
 
         Assert.True(tile.Populations[0].Count < 100);
+    }
+
+    [Fact]
+    public void Tick_ExhaustedPopulationGetsTolerancePeriodBeforeMortality()
+    {
+        var world = new World();
+        var tile = world.State.Map.GetTile(0, 0);
+        tile.Resources.Add(EmptyFood());
+        var species = new SpeciesDefinition
+        {
+            Name = "Patient",
+            FoodConsumptionRate = 1f,
+            BreedingRate = 0f,
+            FoodDeprivationToleranceDays = 5,
+            FoodDeprivationMortalityRate = 0.1f,
+            MigrationThreshold = 0f,
+        };
+        var pop = new Population { Species = species, Count = 100 };
+        tile.Populations.Add(pop);
+
+        for (var i = 0; i < 5; i++) world.Tick();
+        Assert.Equal(100, pop.Count);
+        Assert.Equal(5f, pop.FoodDeprivationDays);
+
+        world.Tick();
+        Assert.True(pop.Count < 100);
+    }
+
+    [Fact]
+    public void Tick_PartialNutritionDoesNotCountAsExhaustion()
+    {
+        var world = new World();
+        var tile = world.State.Map.GetTile(0, 0);
+        tile.Resources.Add(new ResourcePool
+        {
+            Type = ResourceType.Food,
+            FoodSubtype = FoodSubtype.Graze,
+            Amount = 0.2f,
+            Capacity = 0.2f,
+            RegenPerTick = 0.2f,
+        });
+        var pop = new Population
+        {
+            Species = new SpeciesDefinition
+            {
+                Name = "Forager",
+                FoodConsumptionRate = 1f,
+                BreedingRate = 0f,
+                FoodDeprivationToleranceDays = 1,
+                FoodDeprivationMortalityRate = 1f,
+                MigrationThreshold = 0f,
+            },
+            Count = 1,
+        };
+        tile.Populations.Add(pop);
+
+        for (var i = 0; i < 20; i++) world.Tick();
+
+        Assert.Equal(1, pop.Count);
+        Assert.Equal(0f, pop.FoodDeprivationDays);
+        Assert.InRange(pop.LastNutritionSatisfaction, 0.05f, 0.5f);
+    }
+
+    [Fact]
+    public void Tick_PartialSupplyStopsMortalityWhileDeprivationPressureRecovers()
+    {
+        var world = new World();
+        var tile = world.State.Map.GetTile(0, 0);
+        var pool = EmptyFood();
+        tile.Resources.Add(pool);
+        var pop = new Population
+        {
+            Species = new SpeciesDefinition
+            {
+                Name = "Recovering",
+                FoodConsumptionRate = 1f,
+                BreedingRate = 0f,
+                FoodDeprivationToleranceDays = 1,
+                FoodDeprivationMortalityRate = 0.1f,
+                MigrationThreshold = 0f,
+            },
+            Count = 100,
+        };
+        tile.Populations.Add(pop);
+
+        world.Tick();
+        world.Tick();
+        var depletedCount = pop.Count;
+        Assert.True(depletedCount < 100);
+
+        pool.Amount = 100f;
+        pool.Capacity = 100f;
+        pool.RegenPerTick = 100f;
+        world.Tick();
+
+        Assert.Equal(depletedCount, pop.Count);
+        Assert.True(pop.FoodDeprivationDays < 2f);
+    }
+
+    [Fact]
+    public void Tick_DehydrationUsesIndependentToleranceAndMortality()
+    {
+        var world = new World();
+        var tile = world.State.Map.GetTile(0, 0);
+        var pop = new Population
+        {
+            Species = new SpeciesDefinition
+            {
+                Name = "Thirsty",
+                FoodConsumptionRate = 0f,
+                WaterConsumptionRate = 1f,
+                BreedingRate = 0f,
+                WaterDeprivationToleranceDays = 2,
+                WaterDeprivationMortalityRate = 0.1f,
+                MigrationThreshold = 0f,
+            },
+            Count = 100,
+        };
+        tile.Populations.Add(pop);
+
+        world.Tick();
+        world.Tick();
+        Assert.Equal(100, pop.Count);
+        Assert.Equal(1f, pop.LastNutritionSatisfaction);
+        Assert.Equal(0f, pop.LastWaterSatisfaction);
+
+        world.Tick();
+        Assert.True(pop.Count < 100);
+        Assert.Equal(0f, pop.FoodDeprivationDays);
     }
 
     [Fact]
@@ -113,8 +244,10 @@ public class WorldTests
 
         world.Tick();
 
-        Assert.True(tile.Populations[0].Count < 100);
-        Assert.True(tile.Populations[1].Count < 100);
+        Assert.Equal(tile.Populations[0].LastSatisfaction, tile.Populations[1].LastSatisfaction, 3);
+        Assert.True(tile.Populations[0].LastSatisfaction < 1f);
+        Assert.Equal(100, tile.Populations[0].Count);
+        Assert.Equal(100, tile.Populations[1].Count);
     }
 
     [Fact]
@@ -124,7 +257,14 @@ public class WorldTests
         var tile  = world.State.Map.GetTile(0, 0);
         var pop   = new Population
         {
-            Species = new SpeciesDefinition { Name = "Fragile", FoodConsumptionRate = 1f, StarvationRate = 1f },
+            Species = new SpeciesDefinition
+            {
+                Name = "Fragile",
+                FoodConsumptionRate = 1f,
+                StarvationRate = 1f,
+                FoodDeprivationToleranceDays = 0,
+                MigrationThreshold = 0f,
+            },
             Count = 1
         };
         tile.Populations.Add(pop);
@@ -171,8 +311,9 @@ public class WorldTests
 
         world.Tick();
 
-        Assert.True(richTile.Populations[0].Count > 100, "rich tile population should grow");
-        Assert.True(poorTile.Populations[0].Count < 100, "poor tile population should shrink");
+        Assert.True(richTile.Populations[0].Count > 100, "rich tile population should breed");
+        Assert.True(poorTile.Populations[0].Count == 100, "poor tile population should have a deprivation grace period");
+        Assert.Equal(0f, poorTile.Populations[0].LastSatisfaction);
     }
 
     [Fact]
@@ -1189,6 +1330,8 @@ public class WorldTests
             world.Tick();
 
         Assert.Equal(Season.Summer, world.State.CurrentSeason);
+        Assert.Equal(1, world.State.DayOfSeason);
+        Assert.Equal(91, world.State.DayOfYear);
     }
 
     [Fact]
@@ -1200,6 +1343,36 @@ public class WorldTests
             world.Tick();
 
         Assert.Equal(Season.Spring, world.State.CurrentSeason);
+        Assert.Equal(2, world.State.Year);
+        Assert.Equal(1, world.State.DayOfYear);
+    }
+
+    [Fact]
+    public void Tick_PopulationDoesNotBreedOutsideConfiguredSeason()
+    {
+        var world = new World();
+        var tile = world.State.Map.GetTile(0, 0);
+        tile.Resources.Add(AbundantFood());
+        var pop = new Population
+        {
+            Species = new SpeciesDefinition
+            {
+                Name = "SummerBreeder",
+                FoodConsumptionRate = 1f,
+                BreedingRate = 1f,
+                BreedingSeasons = [Season.Summer],
+                BreedingDayOfSeason = 1,
+            },
+            Count = 10,
+        };
+        tile.Populations.Add(pop);
+
+        world.Tick();
+        Assert.Equal(10, pop.Count);
+
+        for (var i = 1; i < World.DaysPerSeason; i++) world.Tick();
+        world.Tick();
+        Assert.Equal(20, pop.Count);
     }
 
     [Fact]
@@ -1310,8 +1483,8 @@ public class WorldTests
         var pop = new Population { Species = species, Count = 100 };
         river.Populations.Add(pop);
 
-        // WaterFleeThreshold is 10 ticks; run just past it
-        for (var i = 0; i < 12; i++)
+        // WaterFleeThreshold is 2 days; run just past it
+        for (var i = 0; i < 4; i++)
             world.Tick();
 
         Assert.Empty(river.Populations.Where(p => p.Count > 0));
@@ -1364,6 +1537,8 @@ public class WorldTests
             EaseOfEating = { [FoodSubtype.Graze] = 5f }, // Browse and Fruit absent from dict → ease 0
             ReproductionRate = 0f,
             StarvationRate = 1f,
+            FoodDeprivationToleranceDays = 0,
+            MigrationThreshold = 0f,
         };
         var pop = new Population { Species = species, Count = 100 };
         tile.Populations.Add(pop);
@@ -1640,7 +1815,7 @@ public class WorldTests
                 Amount = 0f, Capacity = 10_000f, RegenPerTick = 100f,
             };
             tile.Resources.Add(pool);
-            world.State.CurrentSeason         = Season.Summer;  // food season mult 1.0 → isolate weather
+            world.State.Tick = World.DaysPerSeason;  // Summer food multiplier 1.0 isolates weather
             world.State.CurrentWeather        = weather;
             world.State.WeatherTicksRemaining = 100;            // don't re-roll mid-test
             world.Tick();
@@ -1696,7 +1871,7 @@ public class WorldTests
                 Amount = 0f, Capacity = 10_000f, RegenPerTick = 100f,
             };
             tile.Resources.Add(fruit);
-            world.State.CurrentSeason = Season.Summer;   // neutral food multiplier
+            world.State.Tick = World.DaysPerSeason;   // neutral Summer food multiplier
             if (pollinator)
             {
                 // pure pollinator (no food draw) so we measure the regen boost in isolation

@@ -70,11 +70,30 @@ public class SpeciesDefinition
 
     // ── shared traits ────────────────────────────────────────────────────────
 
-    // fractional population growth per tick when fully satisfied
-    public float ReproductionRate { get; init; } = 0.02f;
+    // Fraction of the population added as a cohort on each configured breeding season. Births happen
+    // once per matching season, on BreedingDayOfSeason, and only when the population is well supplied.
+    private float _breedingRate = 0.10f;
+    public float BreedingRate { get => _breedingRate; init => _breedingRate = value; }
+    public float ReproductionRate { get => _breedingRate; init => _breedingRate = value; }
+    public HashSet<Season> BreedingSeasons { get; init; } = [Season.Spring];
+    public int BreedingDayOfSeason { get; init; } = 30;
 
-    // fractional population death per tick when fully resource-deprived
-    public float StarvationRate { get; init; } = 0.05f;
+    // Deprivation only accumulates when nutrition/water is effectively exhausted. Populations get a
+    // species-specific tolerance window to migrate before gradual mortality begins.
+    private float _foodDeprivationMortalityRate = 0.005f;
+    public float FoodDeprivationMortalityRate
+    {
+        get => _foodDeprivationMortalityRate;
+        init => _foodDeprivationMortalityRate = value;
+    }
+    public float StarvationRate
+    {
+        get => _foodDeprivationMortalityRate;
+        init => _foodDeprivationMortalityRate = value;
+    }
+    public int FoodDeprivationToleranceDays { get; init; } = 14;
+    public float WaterDeprivationMortalityRate { get; init; } = 0.02f;
+    public int WaterDeprivationToleranceDays { get; init; } = 3;
 
     // satisfaction ratio below which the population will seek a better tile (0 = never migrate)
     public float MigrationThreshold { get; init; } = 0.5f;
