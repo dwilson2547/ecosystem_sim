@@ -160,8 +160,11 @@ public partial class HexTile : Node2D
             var iconCount = Mathf.Clamp(Mathf.CeilToInt((float)dominant!.Count / CountPerIcon), 1, MaxSpeciesIcons);
             var layout    = IconLayouts[iconCount - 1];
             var sizeMult  = IconScales.GetValueOrDefault(dominant.Species.EffectiveRootName, 1f);
+            // uniform scale (not separate x/y) so non-square art — e.g. the T-Rex's wide poses —
+            // keeps its aspect ratio; drawSize caps the icon's larger dimension
             var drawSize  = IconSize * sizeMult;
-            var scale     = new Vector2(drawSize / icon.GetWidth(), drawSize / icon.GetHeight());
+            var uniform   = drawSize / MathF.Max(icon.GetWidth(), icon.GetHeight());
+            var scale     = new Vector2(uniform, uniform);
 
             for (var i = 0; i < _speciesIcons.Count; i++)
             {
