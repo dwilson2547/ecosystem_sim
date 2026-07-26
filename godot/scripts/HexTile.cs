@@ -19,8 +19,6 @@ public partial class HexTile : Node2D
     private Label     _warning = null!;
     private bool      _showDetailedContents;
 
-    // species with map icon art — sized so ~5 fit on a single hex tile. Add an entry here (and
-    // a processed PNG in assets/sprites/) to give another species its own map icon.
     private const int   MaxSpeciesIcons  = 5;
     private const float IconSize         = 20f;
     private const float IconSpacing      = 22f;
@@ -29,29 +27,12 @@ public partial class HexTile : Node2D
     private const float DetailSpacing    = 22f;
     private const float DetailSpan       = 76f;
 
-    private static readonly Dictionary<string, string> IconPaths = new()
-    {
-        ["Alamosaurus"] = "res://assets/sprites/alamosaurus.png",
-        ["Triceratops"] = "res://assets/sprites/triceratops.png",
-        ["Megalodon"]   = "res://assets/sprites/megalodon.png",
-    };
-
     // per-species icon size multiplier (default 1). The Megalodon is a singleton apex, so it's
     // drawn oversized to stand out from the herds around it.
     private static readonly Dictionary<string, float> IconScales = new()
     {
         ["Megalodon"] = 2.5f,
     };
-
-    private static readonly Dictionary<string, Texture2D> _iconCache = new();
-
-    private static Texture2D? IconFor(string rootName)
-    {
-        if (!IconPaths.TryGetValue(rootName, out var path)) return null;
-        if (!_iconCache.TryGetValue(rootName, out var tex))
-            _iconCache[rootName] = tex = GD.Load<Texture2D>(path);
-        return tex;
-    }
 
     // 1-5 icon cluster layouts (offsets from tile center), a 3-over-2 pentagon pattern at 5
     private static readonly Vector2[][] IconLayouts =
@@ -178,7 +159,9 @@ public partial class HexTile : Node2D
 
         // species with icon art render as a repeated icon (quantity = icon count) instead of
         // text; every other species keeps the letter+count label until they get their own art
-        var icon = dominant is not null ? IconFor(dominant.Species.EffectiveRootName) : null;
+        var icon = dominant is not null
+            ? SpeciesVisuals.IconFor(dominant.Species.Name, dominant.Species.EffectiveRootName)
+            : null;
 
         if (icon is not null)
         {
@@ -186,9 +169,18 @@ public partial class HexTile : Node2D
 
             var iconCount = Mathf.Clamp(Mathf.CeilToInt((float)dominant!.Count / CountPerIcon), 1, MaxSpeciesIcons);
             var layout    = IconLayouts[iconCount - 1];
-            var sizeMult  = IconScales.GetValueOrDefault(dominant.Species.EffectiveRootName, 1f);
+            var visualBase = SpeciesVisuals.BaseFor(
+                dominant.Species.Name,
+                dominant.Species.EffectiveRootName);
+            var sizeMult = IconScales.GetValueOrDefault(visualBase, 1f)
+                         * SpeciesVisuals.ScaleFor(
+                             dominant.Species.Name,
+                             dominant.Species.EffectiveRootName);
             var drawSize  = IconSize * sizeMult;
             var scale     = new Vector2(drawSize / icon.GetWidth(), drawSize / icon.GetHeight());
+            var tint = SpeciesVisuals.TintFor(
+                dominant.Species.Name,
+                dominant.Species.EffectiveRootName);
 
             for (var i = 0; i < _speciesIcons.Count; i++)
             {
@@ -199,6 +191,7 @@ public partial class HexTile : Node2D
                 _speciesIcons[i].Texture  = icon;
                 _speciesIcons[i].Scale    = scale;
                 _speciesIcons[i].Position = layout[i];
+                _speciesIcons[i].Modulate = tint;
             }
         }
         else
@@ -237,14 +230,21 @@ public partial class HexTile : Node2D
             var center = new Vector2(
                 (col - (columns - 1) / 2f) * spacing,
                 (row - (rows - 1) / 2f) * spacing);
-            var icon = IconFor(pop.Species.EffectiveRootName);
+            var icon = SpeciesVisuals.IconFor(pop.Species.Name, pop.Species.EffectiveRootName);
             label.TooltipText = $"{pop.Species.Name} ×{pop.Count}";
 
             if (icon is not null)
             {
                 sprite.Texture = icon;
-                sprite.Scale = Vector2.One * (iconSize / Math.Max(icon.GetWidth(), icon.GetHeight()));
+                sprite.Scale = Vector2.One
+                    * (iconSize * SpeciesVisuals.ScaleFor(
+                           pop.Species.Name,
+                           pop.Species.EffectiveRootName)
+                       / Math.Max(icon.GetWidth(), icon.GetHeight()));
                 sprite.Position = center + new Vector2(0f, -4f);
+                sprite.Modulate = SpeciesVisuals.TintFor(
+                    pop.Species.Name,
+                    pop.Species.EffectiveRootName);
                 sprite.Visible = true;
                 label.Text = pop.Count.ToString();
                 label.Position = center + new Vector2(-14f, 3f);

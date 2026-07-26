@@ -6,6 +6,16 @@ namespace EcosystemGame;
 // Mirrors SimConsole/WorldSeeder.cs — both will be retired once map generation is live.
 public static class DemoWorldSeeder
 {
+    public static readonly string[] BuiltInSpeciesNames =
+    [
+        "Triceratops", "Alamosaurus", "Parasaurolophus", "Tyrannosaurus",
+        "Locust", "Meganeura", "Bee", "Mosasaurus", "Plesiosaur",
+        "Kronosaurus", "Megalodon", "Xiphactinus",
+    ];
+
+    public static readonly string[] CustomizableBaseNames =
+        ["Triceratops", "Alamosaurus", "Megalodon"];
+
     public static readonly Disease DinoFever = new()
     {
         Name = "Dino Fever",
@@ -14,7 +24,7 @@ public static class DemoWorldSeeder
         RecoveryRate  = 0.015f
     };
 
-    public static World Create()
+    public static World Create(IReadOnlyCollection<SavedCustomSpecies>? customSpecies = null)
     {
         // ── land species ──────────────────────────────────────────────────────
 
@@ -416,6 +426,49 @@ public static class DemoWorldSeeder
         Place(kronosPod,   13,  5,  8);
         Place(theMegalodon, 14,  4,  1);
         Place(xiphShoal,   11,  4, 12);   // shallow strip, amid the Mosasaurus nursery
+
+        var speciesByName = new Dictionary<string, SpeciesDefinition>(StringComparer.OrdinalIgnoreCase)
+        {
+            [triceratops.Name] = triceratops,
+            [alamosaurus.Name] = alamosaurus,
+            [megalodon.Name] = megalodon,
+        };
+        var preferredTerrain = new Dictionary<string, TerrainType[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            [triceratops.Name] = [TerrainType.Plains, TerrainType.Highland],
+            [alamosaurus.Name] = [TerrainType.Forest],
+            [megalodon.Name] = [TerrainType.DeepOcean],
+        };
+
+        foreach (var saved in customSpecies ?? [])
+        {
+            if (!speciesByName.TryGetValue(saved.Template.BaseSpeciesName, out var baseSpecies))
+                continue;
+
+            var species = saved.Template.BuildSpecies(baseSpecies);
+            var faction = new Faction
+            {
+                Name = $"{species.Name} Enclave",
+                PrimarySpecies = species,
+            };
+            world.State.Factions.Add(faction);
+
+            var terrains = preferredTerrain[baseSpecies.Name];
+            var spawn = map.AllTiles()
+                .Where(tile => terrains.Contains(tile.Terrain))
+                .OrderBy(tile => tile.Populations.Sum(pop => pop.Count))
+                .ThenBy(tile => tile.Y)
+                .ThenBy(tile => tile.X)
+                .FirstOrDefault()
+                ?? throw new InvalidOperationException(
+                    $"No compatible spawn terrain exists for {species.Name}.");
+            var count = species.MaxCount == 1
+                ? 1
+                : species.MaxCount > 0
+                    ? Math.Min(20, species.MaxCount)
+                    : 20;
+            Place(faction, spawn.X, spawn.Y, count);
+        }
 
         return world;
     }

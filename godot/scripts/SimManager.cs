@@ -13,6 +13,7 @@ public partial class SimManager : Node
 
     public World World { get; private set; } = null!;
     public ScenarioKind? CurrentScenarioKind { get; private set; }
+    public IReadOnlyList<SavedCustomSpecies> CurrentCustomSpecies { get; private set; } = [];
     public bool HasStarted => CurrentScenarioKind.HasValue;
 
     // Seconds between ticks — 2.0 by default (intentionally slow; tune in settings later)
@@ -20,6 +21,8 @@ public partial class SimManager : Node
 
     private float _elapsed;
     private bool  _paused;
+    private readonly HashSet<string> _openModals = [];
+    public bool UiModalOpen => _openModals.Count > 0;
 
     public bool Paused
     {
@@ -35,6 +38,7 @@ public partial class SimManager : Node
     [Signal] public delegate void AnalysisToggleRequestedEventHandler();
     [Signal] public delegate void FactionToggleRequestedEventHandler();
     [Signal] public delegate void ScenarioToggleRequestedEventHandler();
+    [Signal] public delegate void WorkshopToggleRequestedEventHandler();
 
     public override void _Ready()
     {
@@ -62,10 +66,15 @@ public partial class SimManager : Node
         Paused = !_paused;
     }
 
-    public void StartScenario(ScenarioKind kind)
+    public void StartScenario(
+        ScenarioKind kind,
+        IReadOnlyCollection<SavedCustomSpecies>? customSpecies = null)
     {
         _elapsed = 0f;
-        World = DemoWorldSeeder.Create();
+        CurrentCustomSpecies = kind == ScenarioKind.Sandbox
+            ? customSpecies?.ToList() ?? []
+            : [];
+        World = DemoWorldSeeder.Create(CurrentCustomSpecies);
         World.StartScenario(kind);
         CurrentScenarioKind = kind;
         GD.Print($"[Scenario] started {kind}");
@@ -77,7 +86,7 @@ public partial class SimManager : Node
     public void Reset()
     {
         if (CurrentScenarioKind is { } kind)
-            StartScenario(kind);
+            StartScenario(kind, CurrentCustomSpecies);
     }
 
     public void RequestScenarioSelection()
@@ -89,6 +98,15 @@ public partial class SimManager : Node
     public void ToggleAnalysis() => EmitSignal(SignalName.AnalysisToggleRequested);
     public void ToggleFactions() => EmitSignal(SignalName.FactionToggleRequested);
     public void ToggleScenarioPanel() => EmitSignal(SignalName.ScenarioToggleRequested);
+    public void ToggleWorkshop() => EmitSignal(SignalName.WorkshopToggleRequested);
+
+    public void SetModalOpen(string modalName, bool open)
+    {
+        if (open)
+            _openModals.Add(modalName);
+        else
+            _openModals.Remove(modalName);
+    }
 
     public ScenarioActionResult TryApplyScenarioAction(IScenarioAction action)
     {

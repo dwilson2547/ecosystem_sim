@@ -45,6 +45,7 @@ public partial class HUD : CanvasLayer
         AddButton(row, "Factions", SimManager.Instance.ToggleFactions, "Toggle faction panel");
         AddButton(row, "Goals", SimManager.Instance.ToggleScenarioPanel, "Toggle scenario goals");
         AddButton(row, "History", SimManager.Instance.ToggleAnalysis, "History and events [H]");
+        AddButton(row, "Species", SimManager.Instance.ToggleWorkshop, "Open Species Workshop");
         AddButton(row, "Restart", SimManager.Instance.Reset, "Restart current run [R]");
         AddButton(row, "New", SimManager.Instance.RequestScenarioSelection, "Choose a new scenario");
         AddButton(row, "?", ToggleHelp, "Show controls");

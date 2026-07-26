@@ -52,6 +52,10 @@ godot/
 │       └── triceratops.png — processed map icon (transparent bg, multicolor head, dull brown/grey body)
 └── scripts/
     ├── SimManager.cs      — autoload singleton: owns World, drives tick timer
+    ├── CustomSpeciesLibrary.cs — persistent JSON template library
+    ├── SavedCustomSpecies.cs — template + tint/scale persistence shape
+    ├── SpeciesVisuals.cs  — resolves inherited icons and custom appearance
+    ├── SpeciesWorkshopPanel.cs — full-screen custom species editor
     ├── DemoWorldSeeder.cs — creates the demo world (mirrors SimConsole/WorldSeeder)
     ├── SimMain.cs         — root node: creates camera, renderer, HUD, panels, and mode overlay
     ├── HexMapRenderer.cs  — tile creation/selection and camera-zoom detail threshold
@@ -103,6 +107,8 @@ Main (Node2D / SimMain)
 │   └── PanelContainer → objective/status content + restart/new-scenario buttons
 ├── HistoryPanel (CanvasLayer)
 │   └── PanelContainer → History/Events views + lineage chart or event rows
+├── SpeciesWorkshopPanel (CanvasLayer)
+│   └── modal saved-list + editor + preview + confirmation dialog
 ├── TileInfoPanel (CanvasLayer)
 │   └── PanelContainer (anchored right, 300px)
 │       └── ScrollContainer → VBoxContainer → dynamic content
@@ -227,6 +233,22 @@ The top toolbar replaces the old permanent instruction/status stack. It shows co
 weather, speed, and latest-event state; provides simulation and panel controls; moves keyboard help
 behind `?`; and can collapse to a single `Menu [Tab]` button. Factions, goals, history, and selected
 tile details can all be dismissed independently.
+
+## Species Workshop and custom Sandbox roster
+
+Open **Species** from the toolbar or **Species Workshop** from Sandbox setup. The workshop provides:
+
+- Triceratops, Alamosaurus, and Megalodon base body plans
+- an 8-point budget across body size, immunity, breeding rate, and aggression
+- live derived food/prey demand, combat, immunity, breeding, aggression, diet, and terrain preview
+- inherited sprite preview with tint and 0.7–1.4 scale controls
+- persistent create/edit flows, inline validation/errors, and confirmed deletion
+
+Templates are stored at `user://custom_species.json`. The Sandbox section of the startup overlay
+lists every valid saved species as an unchecked roster option. Selected species spawn as distinct
+factions on compatible terrain. Challenges ignore custom selections. A running Sandbox keeps a
+template snapshot, so editing or deleting library entries only affects future runs. Custom species
+and their evolved Greater/Lesser descendants retain their base icon, tint, and scale.
 
 The Locust Plague objectives are to keep Triceratops, Alamosaurus, Parasaurolophus, and
 Tyrannosaurus alive; finish with at most 500 locusts; and retain at least 25% average Plains grass.

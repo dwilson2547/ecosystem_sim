@@ -25,6 +25,7 @@ public partial class SimMain : Node2D
         AddChild(new FactionPanel());
         AddChild(new ScenarioPanel());
         AddChild(new HistoryPanel());
+        AddChild(new SpeciesWorkshopPanel());
 
         _panel = new TileInfoPanel();
         AddChild(_panel);
@@ -51,6 +52,7 @@ public partial class SimMain : Node2D
         }
 
         if (ev is not InputEventKey key || !key.Pressed || key.Echo) return;
+        if (SimManager.Instance.UiModalOpen) return;
 
         switch (key.PhysicalKeycode)
         {

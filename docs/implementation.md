@@ -515,6 +515,20 @@ ImmunityDelta never decreases — immunity gained through disease survival is pe
   located event.
 - Names are validated case-insensitively; automatic Greater/Giant/Lesser/Dwarf names are reserved.
 
+**Persistent custom templates (Godot Sandbox):**
+
+`CustomSpeciesTemplate` derives a new root species from a built-in base. Size, immunity, breeding,
+and aggression steps share an 8-point budget. Size scales food/prey demand, combat, and byproducts;
+immunity adds 5 percentage points per step; breeding changes by 15% per step; aggression changes by
+10 percentage points per step. Diet, prey categories, terrain restrictions, deprivation behavior,
+migration, and breeding seasons are inherited.
+
+The frontend stores the template plus sprite tint/scale in `user://custom_species.json`. Data is
+written through a temporary file, validated again during load, and invalid records are skipped with
+an explicit UI error. A running world retains a snapshot of selected templates, so later edits or
+deletion do not mutate its visuals or simulation traits. Selected Sandbox templates become distinct
+factions and spawn on the least-populated compatible terrain.
+
 ---
 
 ## Speciation

@@ -1097,6 +1097,77 @@ public class WorldTests
     // ── Evolution tests ─────────────────────────────────────────────────────
 
     [Fact]
+    public void CustomSpeciesTemplate_BuildsDerivedStatsWithinPointBudget()
+    {
+        var baseSpecies = BaseSpecies();
+        var template = new CustomSpeciesTemplate
+        {
+            Name = "Stoneback",
+            BaseSpeciesName = baseSpecies.Name,
+            SizeSteps = 2,
+            ImmunitySteps = 2,
+            BreedingSteps = -1,
+            AggressionSteps = 1,
+        };
+
+        var species = template.BuildSpecies(baseSpecies);
+
+        Assert.Equal(6, template.PointsSpent);
+        Assert.Equal("Stoneback", species.Name);
+        Assert.Equal("Stoneback", species.EffectiveRootName);
+        Assert.Equal(baseSpecies.FoodConsumptionRate * 1.3f,
+            species.FoodConsumptionRate, 3);
+        Assert.Equal(baseSpecies.CombatStrength * MathF.Sqrt(1.3f),
+            species.CombatStrength, 3);
+        Assert.Equal(baseSpecies.Immunity + 0.1f, species.Immunity, 3);
+        Assert.Equal(baseSpecies.BreedingRate * 0.85f, species.BreedingRate, 3);
+        Assert.Equal(baseSpecies.WarAggression + 0.1f, species.WarAggression, 3);
+    }
+
+    [Fact]
+    public void CustomSpeciesTemplate_RejectsExceededPointBudget()
+    {
+        var template = new CustomSpeciesTemplate
+        {
+            Name = "Overbuilt",
+            BaseSpeciesName = "Base",
+            SizeSteps = 2,
+            ImmunitySteps = 3,
+            BreedingSteps = 2,
+            AggressionSteps = 2,
+        };
+
+        Assert.False(template.TryValidate(out var reason));
+        Assert.Contains("budget exceeded", reason);
+    }
+
+    [Theory]
+    [InlineData("x")]
+    [InlineData("Bad@Name")]
+    public void CustomSpeciesTemplate_RejectsInvalidNames(string name)
+    {
+        var template = new CustomSpeciesTemplate
+        {
+            Name = name,
+            BaseSpeciesName = "Base",
+        };
+
+        Assert.False(template.TryValidate(out _));
+    }
+
+    [Fact]
+    public void CustomSpeciesTemplate_RejectsReservedNameCaseInsensitively()
+    {
+        var template = new CustomSpeciesTemplate
+        {
+            Name = "TRICERATOPS",
+            BaseSpeciesName = "Triceratops",
+        };
+
+        Assert.False(template.TryValidate(out _, ["Triceratops"]));
+    }
+
+    [Fact]
     public void TryGuideEvolution_ChangesTraitAndSpendsSandboxPoint()
     {
         var world = new World();

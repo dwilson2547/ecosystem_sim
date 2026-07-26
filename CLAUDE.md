@@ -14,7 +14,7 @@ Locust Plague, and Drought Recovery modes. Terminal prototype (`SimConsole`) sti
 
 - **Language:** C# 12, .NET 8
 - **Engine layer:** `EcosystemSim` — a class library, zero UI dependencies, engine-agnostic
-- **Tests:** xUnit 3, `EcosystemSim.Tests` — 120 tests, run `dotnet test` from `sim/`
+- **Tests:** xUnit 3, `EcosystemSim.Tests` — 125 tests, run `dotnet test` from `sim/`
 - **Console UI:** `SimConsole` — terminal renderer / prototype; run from `sim/`
 - **Game UI:** Godot 4.7 (.NET), lives in `godot/`; references `EcosystemSim` via ProjectReference
 
@@ -29,6 +29,9 @@ godot/                      # Godot 4.7 game frontend
 ├── scenes/Main.tscn        # Root scene (Node2D + SimMain.cs)
 └── scripts/
     ├── SimManager.cs       # Autoload singleton: owns World, drives tick timer
+    ├── CustomSpeciesLibrary.cs # JSON persistence under Godot user data
+    ├── SpeciesWorkshopPanel.cs # Custom species editor, preview, and saved list
+    ├── SpeciesVisuals.cs   # Built-in/custom sprite, tint, and scale resolution
     ├── DemoWorldSeeder.cs  # Creates the demo world for the Godot build
     ├── SimMain.cs          # Root node: spawns map, HUD, panels, and scenario selection overlay
     ├── HexMapRenderer.cs   # Instantiates HexTile × 100; PixelToTile + SelectTile
@@ -61,6 +64,7 @@ sim/
 │   ├── TerrainType.cs      # Terrain definitions, resource compositions, and succession maps
 │   ├── TerrainSuccessionSettings.cs # Configurable degradation/recovery thresholds and rates
 │   ├── GuidedEvolution.cs  # Player-guided trait and subspecies result types
+│   ├── CustomSpeciesTemplate.cs # Validated point-budget species derivation
 │   ├── Season.cs           # Enum: Spring/Summer/Autumn/Winter
 │   ├── Weather.cs          # Enum: Normal/Rainy/Drought (world-level regen modifier over seasons)
 │   ├── Disease.cs          # Disease blueprint (spread, mortality, recovery rates)
@@ -89,7 +93,7 @@ sim/
 
 ```bash
 cd sim
-dotnet test                        # run all 120 tests
+dotnet test                        # run all 125 tests
 dotnet run --project SimConsole    # terminal prototype
 dotnet run --project EcoReport -c Release   # headless ecology stability report (balance tuning)
 ```
@@ -315,6 +319,14 @@ third of itself into a named subspecies. The new species bakes in the current si
 keeps the lineage root and faction, resets transient modifiers, and emits a located event. Natural
 Greater/Giant/Lesser/Dwarf names are reserved to avoid collisions with automatic speciation.
 
+The Godot **Species Workshop** builds persistent species templates from Triceratops, Alamosaurus,
+or Megalodon body plans. Four discrete traits share an 8-point budget: size, immunity, breeding,
+and aggression. The template derives food/prey demand, combat, immunity, breeding, byproduct
+output, terrain compatibility, and inherited diet from the base definition. Tint and sprite scale
+are frontend appearance metadata. Templates are saved as JSON under `user://custom_species.json`,
+validated again on load, and selected explicitly in the Sandbox startup roster. Selected templates
+spawn as separate factions on compatible low-population tiles; challenges keep authored rosters.
+
 ### 15. Scenarios and interventions
 `World.StartScenario()` creates an unrestricted Sandbox session or a timed challenge. Challenge
 state lives in `WorldState.Scenario`: remaining days, a shared 10-point budget, objective progress,
@@ -423,8 +435,8 @@ what it needs on specific tiles. Key helpers in `WorldTests.cs`:
 
 1. **More challenge scenarios** — reuse the scenario/objective/action framework for drought,
    disease, predator imbalance, and restoration objectives
-2. **Custom species creator and persistence** — build on guided evolution with reusable player-made
-   species, starting-roster selection, and sprite customization
+2. **Expanded species creator** — add more body plans, diet editing, and composited/procedural sprite
+   parts beyond the current inherited sprite tint/scale system
 3. **Predator-prey balance tuning** — the refuge/scatter/accumulator *mechanisms* are in place but
    deliberately un-tuned: in a sparse-predator sandbox the equilibrium currently favours prey. Tune
    `PreyRefugeHalfSaturation`, `ScatterMinHerd`, Kronosaurus daily prey demand / `BreedingRate`,
