@@ -5,7 +5,7 @@ using System.Linq;
 namespace EcosystemGame;
 
 /// <summary>
-/// One hex cell: a colored Polygon2D for terrain, an outline, and a Label for the dominant pop.
+/// One hex cell with an overview population summary and a zoomed-in complete population layout.
 /// Set SimTile and HexSize before AddChild — _Ready reads both.
 /// </summary>
 public partial class HexTile : Node2D
@@ -17,6 +17,7 @@ public partial class HexTile : Node2D
     private Line2D    _border = null!;
     private Label     _label  = null!;
     private Label     _warning = null!;
+    private bool      _showDetailedContents;
 
     // species with map icon art — sized so ~5 fit on a single hex tile. Add an entry here (and
     // a processed PNG in assets/sprites/) to give another species its own map icon.
@@ -24,6 +25,9 @@ public partial class HexTile : Node2D
     private const float IconSize         = 20f;
     private const float IconSpacing      = 22f;
     private const int   CountPerIcon     = 20; // individuals represented by each icon, capped at MaxSpeciesIcons
+    private const float DetailIconSize   = 17f;
+    private const float DetailSpacing    = 22f;
+    private const float DetailSpan       = 76f;
 
     private static readonly Dictionary<string, string> IconPaths = new()
     {
@@ -62,6 +66,8 @@ public partial class HexTile : Node2D
     // one shared pool of icon sprites, reused for whichever species is dominant on this tile
     // (only one species is ever dominant at a time, so no need for a pool per species)
     private readonly List<Sprite2D> _speciesIcons = [];
+    private readonly List<Sprite2D> _detailIcons = [];
+    private readonly List<Label> _detailLabels = [];
 
     public override void _Ready()
     {
@@ -119,6 +125,14 @@ public partial class HexTile : Node2D
         _border.Width        = selected ? 3.0f : 1.5f;
     }
 
+    public void SetDetailedContents(bool showDetails)
+    {
+        if (_showDetailedContents == showDetails) return;
+        _showDetailedContents = showDetails;
+        if (IsNodeReady())
+            Refresh();
+    }
+
     public void Refresh()
     {
         if (SimTile is null) return;
@@ -150,6 +164,17 @@ public partial class HexTile : Node2D
         var dominant = living
             .OrderByDescending(p => p.Count)
             .FirstOrDefault();
+
+        if (_showDetailedContents)
+        {
+            RefreshDetailedContents(living);
+            _label.Visible = false;
+            foreach (var sprite in _speciesIcons) sprite.Visible = false;
+            return;
+        }
+
+        HideDetailedContents();
+        _label.Visible = true;
 
         // species with icon art render as a repeated icon (quantity = icon count) instead of
         // text; every other species keeps the letter+count label until they get their own art
@@ -184,6 +209,86 @@ public partial class HexTile : Node2D
                 ? $"{dominant.Species.Name[0]}\n{dominant.Count}"
                 : string.Empty;
         }
+    }
+
+    private void RefreshDetailedContents(List<Population> living)
+    {
+        EnsureDetailSlots(living.Count);
+        var columns = Math.Max(1, Mathf.CeilToInt(MathF.Sqrt(living.Count)));
+        var rows = Math.Max(1, Mathf.CeilToInt((float)living.Count / columns));
+        var longestAxis = Math.Max(columns, rows);
+        var spacing = longestAxis <= 1
+            ? 0f
+            : MathF.Min(DetailSpacing, DetailSpan / (longestAxis - 1));
+        var iconSize = MathF.Min(DetailIconSize, MathF.Max(8f, spacing * 0.75f));
+
+        for (var i = 0; i < _detailIcons.Count; i++)
+        {
+            var visible = i < living.Count;
+            var sprite = _detailIcons[i];
+            var label = _detailLabels[i];
+            sprite.Visible = visible;
+            label.Visible = visible;
+            if (!visible) continue;
+
+            var pop = living[i];
+            var col = i % columns;
+            var row = i / columns;
+            var center = new Vector2(
+                (col - (columns - 1) / 2f) * spacing,
+                (row - (rows - 1) / 2f) * spacing);
+            var icon = IconFor(pop.Species.EffectiveRootName);
+            label.TooltipText = $"{pop.Species.Name} ×{pop.Count}";
+
+            if (icon is not null)
+            {
+                sprite.Texture = icon;
+                sprite.Scale = Vector2.One * (iconSize / Math.Max(icon.GetWidth(), icon.GetHeight()));
+                sprite.Position = center + new Vector2(0f, -4f);
+                sprite.Visible = true;
+                label.Text = pop.Count.ToString();
+                label.Position = center + new Vector2(-14f, 3f);
+                label.Size = new Vector2(28f, 14f);
+            }
+            else
+            {
+                sprite.Visible = false;
+                label.Text = $"{pop.Species.EffectiveRootName[0]}\n{pop.Count}";
+                label.Position = center + new Vector2(-14f, -13f);
+                label.Size = new Vector2(28f, 28f);
+            }
+        }
+    }
+
+    private void EnsureDetailSlots(int count)
+    {
+        while (_detailIcons.Count < count)
+        {
+            var sprite = new Sprite2D { Visible = false };
+            AddChild(sprite);
+            _detailIcons.Add(sprite);
+
+            var label = new Label
+            {
+                Visible = false,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                MouseFilter = Control.MouseFilterEnum.Pass,
+            };
+            label.AddThemeFontSizeOverride("font_size", 9);
+            label.AddThemeColorOverride("font_color", Colors.White);
+            label.AddThemeColorOverride("font_shadow_color", Colors.Black);
+            label.AddThemeConstantOverride("shadow_offset_x", 1);
+            label.AddThemeConstantOverride("shadow_offset_y", 1);
+            AddChild(label);
+            _detailLabels.Add(label);
+        }
+    }
+
+    private void HideDetailedContents()
+    {
+        foreach (var sprite in _detailIcons) sprite.Visible = false;
+        foreach (var label in _detailLabels) label.Visible = false;
     }
 
     private static Color TerrainColor(TerrainType t) => t switch

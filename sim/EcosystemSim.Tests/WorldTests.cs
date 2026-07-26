@@ -1096,6 +1096,125 @@ public class WorldTests
 
     // ── Evolution tests ─────────────────────────────────────────────────────
 
+    [Fact]
+    public void TryGuideEvolution_ChangesTraitAndSpendsSandboxPoint()
+    {
+        var world = new World();
+        world.StartScenario(ScenarioKind.Sandbox);
+        var tile = world.State.Map.GetTile(0, 0);
+        var pop = new Population { Species = BaseSpecies(), Count = 20 };
+        tile.AddPopulation(pop);
+
+        var result = world.TryGuideEvolution(pop, GuidedEvolutionTrait.Larger);
+
+        Assert.True(result.Success);
+        Assert.Equal(1.1f, pop.SizeIndex, 3);
+        Assert.Equal(World.InitialGuidancePoints - World.TraitGuidanceCost,
+            world.GuidancePointsRemaining);
+        Assert.Contains(world.State.Events, e =>
+            e.Message.Contains("guided toward larger size")
+            && e.TileX == tile.X
+            && e.TileY == tile.Y);
+    }
+
+    [Fact]
+    public void TryGuideEvolution_IsUnavailableOutsideSandbox()
+    {
+        var world = new World();
+        var tile = world.State.Map.GetTile(0, 0);
+        var pop = new Population { Species = BaseSpecies(), Count = 20 };
+        tile.AddPopulation(pop);
+
+        var result = world.TryGuideEvolution(pop, GuidedEvolutionTrait.Immunity);
+
+        Assert.False(result.Success);
+        Assert.Equal(World.InitialGuidancePoints, world.GuidancePointsRemaining);
+        Assert.Equal(0f, pop.ImmunityDelta);
+    }
+
+    [Fact]
+    public void TryGuideEvolution_DoesNotSpendPointAtTraitLimit()
+    {
+        var world = new World();
+        world.StartScenario(ScenarioKind.Sandbox);
+        var tile = world.State.Map.GetTile(0, 0);
+        var pop = new Population
+        {
+            Species = BaseSpecies(),
+            Count = 20,
+            SizeIndex = 2f,
+        };
+        tile.AddPopulation(pop);
+
+        var result = world.TryGuideEvolution(pop, GuidedEvolutionTrait.Larger);
+
+        Assert.False(result.Success);
+        Assert.Equal(World.InitialGuidancePoints, world.GuidancePointsRemaining);
+        Assert.Equal(2f, pop.SizeIndex);
+    }
+
+    [Fact]
+    public void TryCreateGuidedSubspecies_SplitsPopulationAndPreservesLineage()
+    {
+        var world = new World();
+        world.StartScenario(ScenarioKind.Sandbox);
+        var tile = world.State.Map.GetTile(0, 0);
+        var parentSpecies = BaseSpecies();
+        var parent = new Population
+        {
+            Species = parentSpecies,
+            Count = 30,
+            SizeIndex = 1.2f,
+            ImmunityDelta = 0.1f,
+            GuidanceSteps = 1,
+        };
+        tile.AddPopulation(parent);
+
+        var result = world.TryCreateGuidedSubspecies(parent, "River Runner");
+
+        Assert.True(result.Success);
+        var branch = Assert.IsType<Population>(result.CreatedPopulation);
+        Assert.Equal(20, parent.Count);
+        Assert.Equal(0, parent.GuidanceSteps);
+        Assert.Equal(10, branch.Count);
+        Assert.Equal("River Runner", branch.Species.Name);
+        Assert.Equal(parentSpecies.EffectiveRootName, branch.Species.EffectiveRootName);
+        Assert.Equal(parentSpecies.FoodConsumptionRate * 1.2f,
+            branch.Species.FoodConsumptionRate, 3);
+        Assert.Equal(parentSpecies.Immunity + 0.1f, branch.Species.Immunity, 3);
+        Assert.Same(tile, branch.CurrentTile);
+        Assert.Equal(World.InitialGuidancePoints - World.SubspeciesGuidanceCost,
+            world.GuidancePointsRemaining);
+        Assert.Contains(world.State.Events, e =>
+            e.Message.Contains("River Runner branched")
+            && e.TileX == tile.X
+            && e.TileY == tile.Y);
+    }
+
+    [Fact]
+    public void TryCreateGuidedSubspecies_RejectsDuplicateNameWithoutSpendingPoints()
+    {
+        var world = new World();
+        world.StartScenario(ScenarioKind.Sandbox);
+        var tile = world.State.Map.GetTile(0, 0);
+        var species = BaseSpecies();
+        var parent = new Population
+        {
+            Species = species,
+            Count = 30,
+            SizeIndex = 1.1f,
+            GuidanceSteps = 1,
+        };
+        tile.AddPopulation(parent);
+
+        var result = world.TryCreateGuidedSubspecies(parent, species.Name.ToUpperInvariant());
+
+        Assert.False(result.Success);
+        Assert.Equal(30, parent.Count);
+        Assert.Single(tile.Populations);
+        Assert.Equal(World.InitialGuidancePoints, world.GuidancePointsRemaining);
+    }
+
     private static Population PopOnTile(World world, Tile tile, int count, float consumptionRate = 1f)
     {
         var species = new SpeciesDefinition { Name = "Evo", FoodConsumptionRate = consumptionRate, ReproductionRate = 0, StarvationRate = 0 };

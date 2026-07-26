@@ -11,6 +11,7 @@ public partial class SimMain : Node2D
 {
     private HexMapRenderer _hexMap = null!;
     private TileInfoPanel  _panel  = null!;
+    private HUD            _hud    = null!;
 
     public override void _Ready()
     {
@@ -19,7 +20,8 @@ public partial class SimMain : Node2D
         _hexMap = new HexMapRenderer();
         AddChild(_hexMap);
 
-        AddChild(new HUD());
+        _hud = new HUD();
+        AddChild(_hud);
         AddChild(new FactionPanel());
         AddChild(new ScenarioPanel());
         AddChild(new HistoryPanel());
@@ -66,6 +68,9 @@ public partial class SimMain : Node2D
                 break;
             case Key.H:
                 SimManager.Instance.ToggleAnalysis();
+                break;
+            case Key.Tab:
+                _hud.ToggleCollapsed();
                 break;
         }
     }

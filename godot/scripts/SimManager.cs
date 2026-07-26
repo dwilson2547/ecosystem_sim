@@ -33,6 +33,8 @@ public partial class SimManager : Node
     [Signal] public delegate void ScenarioChangedEventHandler();
     [Signal] public delegate void ScenarioSelectionRequestedEventHandler();
     [Signal] public delegate void AnalysisToggleRequestedEventHandler();
+    [Signal] public delegate void FactionToggleRequestedEventHandler();
+    [Signal] public delegate void ScenarioToggleRequestedEventHandler();
 
     public override void _Ready()
     {
@@ -85,11 +87,35 @@ public partial class SimManager : Node
     }
 
     public void ToggleAnalysis() => EmitSignal(SignalName.AnalysisToggleRequested);
+    public void ToggleFactions() => EmitSignal(SignalName.FactionToggleRequested);
+    public void ToggleScenarioPanel() => EmitSignal(SignalName.ScenarioToggleRequested);
 
     public ScenarioActionResult TryApplyScenarioAction(IScenarioAction action)
     {
         var result = World.TryApplyScenarioAction(action);
         GD.Print($"[Scenario] action {action.Name}: {(result.Success ? "success" : "failed")} — {result.Message}");
+        if (result.Success)
+            CallDeferred(MethodName.NotifyScenarioActionChanged);
+        return result;
+    }
+
+    public GuidedEvolutionResult TryGuideEvolution(
+        Population population,
+        GuidedEvolutionTrait trait)
+    {
+        var result = World.TryGuideEvolution(population, trait);
+        GD.Print($"[Evolution] {trait}: {(result.Success ? "success" : "failed")} — {result.Message}");
+        if (result.Success)
+            CallDeferred(MethodName.NotifyScenarioActionChanged);
+        return result;
+    }
+
+    public GuidedEvolutionResult TryCreateGuidedSubspecies(
+        Population population,
+        string name)
+    {
+        var result = World.TryCreateGuidedSubspecies(population, name);
+        GD.Print($"[Evolution] branch: {(result.Success ? "success" : "failed")} — {result.Message}");
         if (result.Success)
             CallDeferred(MethodName.NotifyScenarioActionChanged);
         return result;

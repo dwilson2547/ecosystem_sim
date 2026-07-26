@@ -11,15 +11,28 @@ namespace EcosystemGame;
 public partial class HexMapRenderer : Node2D
 {
     [Export] public float HexSize { get; set; } = 60f;
+    [Export] public float PopulationDetailZoom { get; set; } = 0.9f;
 
     private readonly Dictionary<(int col, int row), HexTile> _tiles = [];
     private HexTile? _selectedTile;
+    private bool _showDetailedPopulations;
 
     public override void _Ready()
     {
         BuildMap();
         SimManager.Instance.Ticked += RefreshAll;
         SimManager.Instance.WorldReset += RebuildMap;
+    }
+
+    public override void _Process(double delta)
+    {
+        var cameraZoom = GetViewport().GetCamera2D()?.Zoom.X ?? 0f;
+        var showDetails = cameraZoom >= PopulationDetailZoom;
+        if (showDetails == _showDetailedPopulations) return;
+
+        _showDetailedPopulations = showDetails;
+        foreach (var tile in _tiles.Values)
+            tile.SetDetailedContents(showDetails);
     }
 
     private void RebuildMap()
@@ -40,6 +53,7 @@ public partial class HexMapRenderer : Node2D
             var hexTile = new HexTile { SimTile = map.GetTile(x, y), HexSize = HexSize };
             hexTile.Position = HexToPixel(x, y);
             AddChild(hexTile);
+            hexTile.SetDetailedContents(_showDetailedPopulations);
             _tiles[(x, y)] = hexTile;
         }
     }

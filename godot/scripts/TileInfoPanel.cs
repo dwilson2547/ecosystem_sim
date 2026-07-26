@@ -15,6 +15,10 @@ public partial class TileInfoPanel : CanvasLayer
     private Tile?          _tile;
     private string _actionFeedback = string.Empty;
     private bool _actionSucceeded;
+    private Population? _evolutionPopulation;
+    private readonly Dictionary<Population, string> _subspeciesDrafts = [];
+    private string _evolutionFeedback = string.Empty;
+    private bool _evolutionSucceeded;
 
     public override void _Ready()
     {
@@ -26,7 +30,7 @@ public partial class TileInfoPanel : CanvasLayer
         _panel.AnchorBottom = 1f;
         _panel.OffsetLeft   = -300f;
         _panel.OffsetRight  = 0f;
-        _panel.OffsetTop    = 0f;
+        _panel.OffsetTop    = 54f;
         _panel.OffsetBottom = 0f;
         AddChild(_panel);
 
@@ -43,7 +47,7 @@ public partial class TileInfoPanel : CanvasLayer
         _content.MouseFilter = Control.MouseFilterEnum.Pass;
         _panel.Visible = false;
         SimManager.Instance.Ticked += OnTicked;
-        SimManager.Instance.WorldReset += HidePanel;
+        SimManager.Instance.WorldReset += ResetPanel;
     }
 
     public void ShowTile(Tile tile)
@@ -60,8 +64,16 @@ public partial class TileInfoPanel : CanvasLayer
         _panel.Visible = false;
     }
 
+    private void ResetPanel()
+    {
+        _evolutionPopulation = null;
+        _subspeciesDrafts.Clear();
+        HidePanel();
+    }
+
     private void OnTicked()
     {
+        if (GetViewport().GuiGetFocusOwner() is LineEdit) return;
         if (_tile is not null) Rebuild();
     }
 
@@ -78,8 +90,18 @@ public partial class TileInfoPanel : CanvasLayer
 
         if (_tile is null) return;
 
-        // header
-        Row($"({_tile.X}, {_tile.Y})  {_tile.Terrain}", size: 14, color: Colors.White);
+        var header = new HBoxContainer();
+        var title = new Label
+        {
+            Text = $"({_tile.X}, {_tile.Y})  {_tile.Terrain}",
+            SizeFlagsHorizontal = Control.SizeFlags.ExpandFill,
+        };
+        title.AddThemeFontSizeOverride("font_size", 14);
+        header.AddChild(title);
+        var close = new Button { Text = "×", TooltipText = "Close tile details" };
+        close.Pressed += HidePanel;
+        header.AddChild(close);
+        _content.AddChild(header);
         Sep();
 
         // resources
@@ -125,6 +147,9 @@ public partial class TileInfoPanel : CanvasLayer
         if (living.Count > 0)
         {
             Row("Populations", color: new Color(0.7f, 0.9f, 1f));
+            if (SimManager.Instance.World.State.Scenario?.Kind != ScenarioKind.Sandbox)
+                Row("  Guided evolution is available in Sandbox mode.",
+                    color: new Color(0.6f, 0.6f, 0.65f));
             foreach (var pop in living)
                 PopBlock(pop);
         }
@@ -215,11 +240,11 @@ public partial class TileInfoPanel : CanvasLayer
 
         var outerPanel = new PanelContainer();
         outerPanel.AddThemeStyleboxOverride("panel", bg);
-        outerPanel.MouseFilter = Control.MouseFilterEnum.Ignore;
+        outerPanel.MouseFilter = Control.MouseFilterEnum.Pass;
         _content.AddChild(outerPanel);
 
         var vbox = new VBoxContainer();
-        vbox.MouseFilter = Control.MouseFilterEnum.Ignore;
+        vbox.MouseFilter = Control.MouseFilterEnum.Pass;
         outerPanel.AddChild(vbox);
 
         AddTo(vbox, $"{pop.Species.Name}  ×{pop.Count}", size: 13, color: Colors.White);
@@ -249,6 +274,90 @@ public partial class TileInfoPanel : CanvasLayer
         if (pop.Disease is not null)
             AddTo(vbox, $"INFECTED {pop.InfectionLevel * 100f:F0}%  ({pop.Disease.Name})",
                   color: new Color(1f, 0.35f, 0.35f));
+
+        if (SimManager.Instance.World.State.Scenario?.Kind == ScenarioKind.Sandbox)
+            BuildEvolutionControls(vbox, pop);
+    }
+
+    private void BuildEvolutionControls(VBoxContainer parent, Population pop)
+    {
+        var expanded = ReferenceEquals(_evolutionPopulation, pop);
+        var toggle = new Button { Text = expanded ? "Hide guided evolution" : "Guide evolution…" };
+        toggle.Pressed += () =>
+        {
+            _evolutionPopulation = expanded ? null : pop;
+            _evolutionFeedback = string.Empty;
+            CallDeferred(MethodName.Rebuild);
+        };
+        parent.AddChild(toggle);
+        if (!expanded) return;
+
+        var world = SimManager.Instance.World;
+        AddTo(parent,
+            $"Guidance points: {world.GuidancePointsRemaining}/{World.InitialGuidancePoints}",
+            color: new Color(1f, 0.85f, 0.35f));
+        AddTo(parent,
+            $"Current traits: size {pop.SizeIndex:F2} · immunity {pop.EffectiveImmunity:P0}",
+            color: new Color(0.75f, 0.85f, 0.95f));
+
+        var mutations = new HBoxContainer();
+        mutations.AddThemeConstantOverride("separation", 4);
+        AddEvolutionButton(mutations, "Smaller", pop, GuidedEvolutionTrait.Smaller);
+        AddEvolutionButton(mutations, "Larger", pop, GuidedEvolutionTrait.Larger);
+        AddEvolutionButton(mutations, "Immunity", pop, GuidedEvolutionTrait.Immunity);
+        parent.AddChild(mutations);
+        AddTo(parent, $"Trait changes cost {World.TraitGuidanceCost} point.",
+            color: new Color(0.58f, 0.6f, 0.68f));
+
+        var name = new LineEdit
+        {
+            PlaceholderText = "New subspecies name",
+            Text = _subspeciesDrafts.GetValueOrDefault(pop, string.Empty),
+            MaxLength = 28,
+        };
+        name.TextChanged += text => _subspeciesDrafts[pop] = text;
+        parent.AddChild(name);
+
+        var branch = new Button
+        {
+            Text = $"Branch subspecies [{World.SubspeciesGuidanceCost} points]",
+        };
+        branch.Pressed += () =>
+        {
+            var result = SimManager.Instance.TryCreateGuidedSubspecies(pop, name.Text);
+            _evolutionFeedback = result.Message;
+            _evolutionSucceeded = result.Success;
+            if (result.Success)
+            {
+                _subspeciesDrafts.Remove(pop);
+                _evolutionPopulation = result.CreatedPopulation;
+            }
+            CallDeferred(MethodName.Rebuild);
+        };
+        parent.AddChild(branch);
+
+        if (!string.IsNullOrEmpty(_evolutionFeedback))
+            AddTo(parent, _evolutionFeedback,
+                color: _evolutionSucceeded
+                    ? new Color(0.45f, 1f, 0.45f)
+                    : new Color(1f, 0.4f, 0.35f));
+    }
+
+    private void AddEvolutionButton(
+        Container parent,
+        string label,
+        Population pop,
+        GuidedEvolutionTrait trait)
+    {
+        var button = new Button { Text = label };
+        button.Pressed += () =>
+        {
+            var result = SimManager.Instance.TryGuideEvolution(pop, trait);
+            _evolutionFeedback = result.Message;
+            _evolutionSucceeded = result.Success;
+            CallDeferred(MethodName.Rebuild);
+        };
+        parent.AddChild(button);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

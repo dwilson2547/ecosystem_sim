@@ -6,27 +6,31 @@ namespace EcosystemGame;
 public partial class ScenarioPanel : CanvasLayer
 {
     private VBoxContainer _content = null!;
+    private PanelContainer _panel = null!;
 
     public override void _Ready()
     {
-        var panel = new PanelContainer();
-        panel.AnchorLeft = 1f;
-        panel.AnchorRight = 1f;
-        panel.OffsetLeft = -650f;
-        panel.OffsetRight = -310f;
-        panel.OffsetTop = 10f;
-        panel.CustomMinimumSize = new Vector2(340f, 0f);
-        AddChild(panel);
+        _panel = new PanelContainer();
+        _panel.AnchorLeft = 1f;
+        _panel.AnchorRight = 1f;
+        _panel.OffsetLeft = -650f;
+        _panel.OffsetRight = -310f;
+        _panel.OffsetTop = 54f;
+        _panel.CustomMinimumSize = new Vector2(340f, 0f);
+        AddChild(_panel);
 
         _content = new VBoxContainer();
         _content.AddThemeConstantOverride("separation", 4);
-        panel.AddChild(_content);
+        _panel.AddChild(_content);
 
         SimManager.Instance.Ticked += Rebuild;
         SimManager.Instance.WorldReset += Rebuild;
         SimManager.Instance.ScenarioChanged += Rebuild;
+        SimManager.Instance.ScenarioToggleRequested += ToggleVisibility;
         Rebuild();
     }
+
+    private void ToggleVisibility() => _panel.Visible = !_panel.Visible;
 
     private void Rebuild()
     {

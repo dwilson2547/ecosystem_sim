@@ -501,6 +501,20 @@ ImmunityDelta never decreases — immunity gained through disease survival is pe
 
 `EffectiveImmunity = min(1.0, Species.Immunity + ImmunityDelta)`
 
+**Player guidance (Sandbox only):**
+
+- Each world starts with 8 guidance points.
+- Larger, Smaller, and Immunity nudges cost 1 point and directly adjust the selected population by
+  `±0.10 SizeIndex` or `+0.05 ImmunityDelta`, respecting the natural trait caps.
+- A successful nudge increments `Population.GuidanceSteps`; natural drift alone does not unlock a
+  player-created branch.
+- A guided population with at least 6 individuals can spend 2 points to split one third of itself
+  into a named subspecies.
+- The branch uses `CreateDerivedSpecies()` to bake in current size/immunity traits, keeps
+  `EffectiveRootName` and faction membership, resets transient evolution modifiers, and records a
+  located event.
+- Names are validated case-insensitively; automatic Greater/Giant/Lesser/Dwarf names are reserved.
+
 ---
 
 ## Speciation

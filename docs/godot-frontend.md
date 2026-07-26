@@ -54,11 +54,11 @@ godot/
     ├── SimManager.cs      — autoload singleton: owns World, drives tick timer
     ├── DemoWorldSeeder.cs — creates the demo world (mirrors SimConsole/WorldSeeder)
     ├── SimMain.cs         — root node: creates camera, renderer, HUD, panels, and mode overlay
-    ├── HexMapRenderer.cs  — instantiates one HexTile per sim tile; PixelToTile + SelectTile
-    ├── HexTile.cs         — one hex cell (Polygon2D terrain + Label for pop + selection border)
+    ├── HexMapRenderer.cs  — tile creation/selection and camera-zoom detail threshold
+    ├── HexTile.cs         — terrain plus overview/close-zoom population layouts
     ├── CameraController.cs— Camera2D with middle-mouse pan, scroll-wheel zoom
-    ├── HUD.cs             — top-left panel: day / season / year / speed
-    ├── FactionPanel.cs    — left-side panel: faction list, population summaries, diplomatic relations
+    ├── HUD.cs             — compact collapsible toolbar, status, panel toggles, and help
+    ├── FactionPanel.cs    — toggleable faction list, population summaries, diplomatic relations
     ├── ScenarioPanel.cs   — top-right challenge time, AP, objectives, and result
     ├── ScenarioSelectionOverlay.cs — startup Sandbox/Locust Plague/Drought Recovery picker
     ├── HistoryPanel.cs    — bottom analysis panel: population history and recent events
@@ -95,7 +95,7 @@ Main (Node2D / SimMain)
 ├── HexMapRenderer (Node2D)
 │   └── HexTile × 100       — one per sim tile, created in _Ready
 ├── HUD (CanvasLayer)
-│   └── PanelContainer → VBoxContainer → Labels
+│   └── compact HBox toolbar + collapsible help
 ├── FactionPanel (CanvasLayer)
 │   └── PanelContainer (anchored left, 260px)
 │       └── ScrollContainer → VBoxContainer → dynamic content
@@ -147,6 +147,7 @@ Singleton accessed anywhere via `SimManager.Instance`.
 | Scroll wheel  | Zoom in / out |
 | `R`           | Restart the current scenario |
 | `H`           | Toggle population history and event analysis |
+| `Tab`         | Collapse/restore the top toolbar |
 
 ---
 
@@ -156,9 +157,9 @@ Each tile shows:
 - **Background color** — terrain type (see `HexTile.TerrainColor`)
 - **Green tint** — fertilizer > 40 units on the tile
 - **Warning marker/tint** — orange below 60% population satisfaction; red below 30% or when diseased
-- **Dominant population indicator** — whichever living population has the highest count on the
-  tile:
-  - **Species with icon art** (`HexTile.IconPaths`: currently Alamosaurus, Triceratops) — rendered
+- **Overview population indicator** below camera zoom `0.9` — whichever living population has the
+  highest count on the tile:
+  - **Species with icon art** (`HexTile.IconPaths`: currently Alamosaurus, Triceratops, Megalodon) — rendered
     as a cluster of up to `MaxSpeciesIcons` (5) copies of the species' icon, one icon per
     `CountPerIcon` (20) individuals, capped at 5 — quantity is read from icon count, not text.
     Looked up via `Species.EffectiveRootName` so evolved "Greater/Giant X" variants still get the
@@ -167,6 +168,10 @@ Each tile shows:
     whichever species is dominant (only one is ever dominant on a tile at a time).
   - **Every other species** — first letter of dominant species + count (e.g. `T\n87`), letter
     changes to `G`/`L` when speciation produces "Greater"/"Lesser" variants
+- **Detailed population layout** at zoom `0.9` and above — every living population receives a slot.
+  Species with art show their root icon plus count; species without art show a root initial plus
+  count. Slot spacing scales down for unusually crowded tiles so the complete layout remains inside
+  the hex. Evolved and player-named subspecies inherit their root species icon.
 
 Adding icon art for another species: process the source art (transparent background, filled
 silhouette, ~64×64) into `assets/sprites/<name>.png`, then add one entry to `HexTile.IconPaths`
@@ -190,11 +195,14 @@ Sections shown (each separated by a divider):
 - **Populations** — one card per living population, sorted by count descending:
   - Species name + count, faction name, satisfaction, breeding schedule, active food/water
     deprivation pressure, size index, immunity delta, and infection details
+  - In Sandbox, a collapsible guided-evolution area shows the 8-point run budget, three bounded
+    trait nudges, a persistent subspecies-name draft, and inline success/error feedback. Branching
+    costs 2 points and requires one guided trait change plus at least 6 individuals.
 - **Extinct** — compact grey list of zero-count historical populations on that tile
 
 ## FactionPanel
 
-Always-visible 260 px panel on the left side. Rebuilds live on every tick.
+Hidden by default and toggled from the top toolbar. The 260 px left panel rebuilds live on every tick.
 
 Sections:
 - **FACTIONS** — for each living faction: name + total population, then one entry per population
@@ -214,6 +222,11 @@ Drought Recovery runs for two years with the same budget.
 final victory/defeat message. When a challenge resolves, `SimManager` pauses automatically and
 locks intervention controls. **Restart** recreates the current mode; **New scenario** pauses and
 returns to the startup picker.
+
+The top toolbar replaces the old permanent instruction/status stack. It shows compact calendar,
+weather, speed, and latest-event state; provides simulation and panel controls; moves keyboard help
+behind `?`; and can collapse to a single `Menu [Tab]` button. Factions, goals, history, and selected
+tile details can all be dismissed independently.
 
 The Locust Plague objectives are to keep Triceratops, Alamosaurus, Parasaurolophus, and
 Tyrannosaurus alive; finish with at most 500 locusts; and retain at least 25% average Plains grass.

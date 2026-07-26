@@ -1,86 +1,118 @@
-using Godot;
 using EcosystemSim;
+using Godot;
 
 namespace EcosystemGame;
 
-/// <summary>
-/// Overlay panel showing tick, season, year, and current tick speed.
-/// Constructed entirely in code — no scene editor setup needed.
-/// </summary>
+/// <summary>Compact simulation toolbar and dismissible keyboard-help panel.</summary>
 public partial class HUD : CanvasLayer
 {
-    private Label _tickLabel    = null!;
-    private Label _seasonLabel  = null!;
+    private PanelContainer _toolbar = null!;
+    private Button _collapsedButton = null!;
+    private PanelContainer _helpPanel = null!;
+    private Label _dateLabel = null!;
     private Label _weatherLabel = null!;
-    private Label _yearLabel    = null!;
-    private Label _speedLabel   = null!;
-    private Label _eventLabel   = null!;
+    private Label _speedLabel = null!;
+    private Label _eventLabel = null!;
+    private Button _pauseButton = null!;
 
     public override void _Ready()
     {
-        var panel = new PanelContainer();
-        panel.SetAnchorsPreset(Control.LayoutPreset.TopLeft);
-        panel.Position    = new Vector2(10f, 10f);
-        panel.MouseFilter = Control.MouseFilterEnum.Ignore;
-        AddChild(panel);
-
-        var vbox = new VBoxContainer();
-        vbox.MouseFilter = Control.MouseFilterEnum.Ignore;
-        panel.AddChild(vbox);
-
-        _tickLabel    = MakeLabel();
-        _seasonLabel  = MakeLabel();
-        _weatherLabel = MakeLabel();
-        _yearLabel    = MakeLabel();
-        _speedLabel   = MakeLabel();
-        _eventLabel   = MakeLabel();
-        _eventLabel.CustomMinimumSize = new Vector2(280f, 0f);
-
-        foreach (var lbl in new[] { _tickLabel, _seasonLabel, _weatherLabel, _yearLabel, _speedLabel, _eventLabel })
-            vbox.AddChild(lbl);
-
-        var hint = new Label
+        _toolbar = new PanelContainer
         {
-            Text        = "Space=pause  +/-=speed  R=restart  H=analysis  MMB=pan  Wheel=zoom  LClick=inspect",
-            MouseFilter = Control.MouseFilterEnum.Ignore,
+            Position = new Vector2(8f, 8f),
+            CustomMinimumSize = new Vector2(0f, 40f),
         };
-        hint.AddThemeColorOverride("font_color", new Color(0.7f, 0.7f, 0.7f));
-        vbox.AddChild(hint);
+        _toolbar.AnchorRight = 1f;
+        _toolbar.OffsetRight = -8f;
+        AddChild(_toolbar);
 
-        var resetBtn = new Button { Text = "Restart [R]" };
-        resetBtn.Pressed += () => SimManager.Instance.Reset();
-        vbox.AddChild(resetBtn);
+        var row = new HBoxContainer();
+        row.AddThemeConstantOverride("separation", 6);
+        _toolbar.AddChild(row);
 
-        var scenarioBtn = new Button { Text = "Choose scenario" };
-        scenarioBtn.Pressed += SimManager.Instance.RequestScenarioSelection;
-        vbox.AddChild(scenarioBtn);
+        _dateLabel = MakeLabel(170f);
+        _weatherLabel = MakeLabel(60f);
+        _speedLabel = MakeLabel(80f);
+        _eventLabel = MakeLabel(140f, expand: true);
+        row.AddChild(_dateLabel);
+        row.AddChild(_weatherLabel);
+        row.AddChild(_speedLabel);
+        row.AddChild(_eventLabel);
 
-        var analysisBtn = new Button { Text = "History & events [H]" };
-        analysisBtn.Pressed += SimManager.Instance.ToggleAnalysis;
-        vbox.AddChild(analysisBtn);
+        _pauseButton = AddButton(row, "Pause", SimManager.Instance.TogglePause, "Pause/resume [Space]");
+        AddButton(row, "−", SimManager.Instance.SpeedDown, "Slow simulation");
+        AddButton(row, "+", SimManager.Instance.SpeedUp, "Speed up simulation");
+        AddButton(row, "Factions", SimManager.Instance.ToggleFactions, "Toggle faction panel");
+        AddButton(row, "Goals", SimManager.Instance.ToggleScenarioPanel, "Toggle scenario goals");
+        AddButton(row, "History", SimManager.Instance.ToggleAnalysis, "History and events [H]");
+        AddButton(row, "Restart", SimManager.Instance.Reset, "Restart current run [R]");
+        AddButton(row, "New", SimManager.Instance.RequestScenarioSelection, "Choose a new scenario");
+        AddButton(row, "?", ToggleHelp, "Show controls");
+        AddButton(row, "▴", ToggleCollapsed, "Collapse toolbar [Tab]");
 
-        SimManager.Instance.Ticked        += Refresh;
+        _collapsedButton = new Button
+        {
+            Text = "Menu [Tab]",
+            Position = new Vector2(8f, 8f),
+            Visible = false,
+        };
+        _collapsedButton.Pressed += ToggleCollapsed;
+        AddChild(_collapsedButton);
+
+        _helpPanel = new PanelContainer
+        {
+            Position = new Vector2(8f, 54f),
+            Visible = false,
+        };
+        var help = new Label
+        {
+            Text = "MMB drag: pan  ·  Wheel: zoom  ·  Click: inspect tile\n"
+                 + "Space: pause  ·  +/-: speed  ·  H: history  ·  R: restart  ·  Tab: toolbar",
+        };
+        help.AddThemeColorOverride("font_color", new Color(0.78f, 0.82f, 0.9f));
+        _helpPanel.AddChild(help);
+        AddChild(_helpPanel);
+
+        SimManager.Instance.Ticked += Refresh;
         SimManager.Instance.PausedChanged += OnPausedChanged;
-        SimManager.Instance.WorldReset    += Refresh;
+        SimManager.Instance.WorldReset += Refresh;
+        SimManager.Instance.ScenarioChanged += Refresh;
         Refresh();
     }
 
+    public void ToggleCollapsed()
+    {
+        var collapsed = _toolbar.Visible;
+        _toolbar.Visible = !collapsed;
+        _collapsedButton.Visible = collapsed;
+        if (collapsed)
+            _helpPanel.Visible = false;
+    }
+
+    private void ToggleHelp() => _helpPanel.Visible = !_helpPanel.Visible;
+
     private void Refresh()
     {
-        var sim   = SimManager.Instance;
+        var sim = SimManager.Instance;
         var state = sim.World.State;
-
-        _tickLabel.Text   = $"Day     {state.DayOfYear}";
-        _yearLabel.Text   = $"Year    {state.Year}";
-        _seasonLabel.Text = $"{state.CurrentSeason}  {state.DayOfSeason}/{World.DaysPerSeason}";
-        _seasonLabel.AddThemeColorOverride("font_color", SeasonColor(state.CurrentSeason));
-        _weatherLabel.Text = WeatherText(state.CurrentWeather);
+        _dateLabel.Text =
+            $"Year {state.Year} · {state.CurrentSeason} {state.DayOfSeason}/{World.DaysPerSeason}";
+        _dateLabel.AddThemeColorOverride("font_color", SeasonColor(state.CurrentSeason));
+        _weatherLabel.Text = state.CurrentWeather switch
+        {
+            Weather.Rainy => "Rain",
+            Weather.Drought => "Drought",
+            _ => "Clear",
+        };
         _weatherLabel.AddThemeColorOverride("font_color", WeatherColor(state.CurrentWeather));
-        _speedLabel.Text  = $"{sim.TickInterval:F2}s / tick";
+        _speedLabel.Text = sim.Paused ? "PAUSED" : $"{sim.TickInterval:F2}s/day";
+        _pauseButton.Text = sim.Paused ? "Resume" : "Pause";
+
         var latestEvent = state.Events.LastOrDefault();
-        var eventText = latestEvent?.Message ?? "none yet";
-        if (eventText.Length > 58) eventText = eventText[..55] + "...";
-        _eventLabel.Text = $"Event: {eventText}";
+        var eventText = latestEvent?.Message ?? "No events yet";
+        if (eventText.Length > 46) eventText = eventText[..43] + "...";
+        _eventLabel.Text = eventText;
+        _eventLabel.TooltipText = latestEvent?.Message ?? string.Empty;
         _eventLabel.AddThemeColorOverride("font_color", latestEvent?.Severity switch
         {
             WorldEventSeverity.Critical => new Color(1f, 0.35f, 0.35f),
@@ -89,33 +121,41 @@ public partial class HUD : CanvasLayer
         });
     }
 
-    private void OnPausedChanged(bool paused)
+    private void OnPausedChanged(bool paused) => Refresh();
+
+    private static Label MakeLabel(float minimumWidth, bool expand = false) => new()
     {
-        _speedLabel.Text = paused ? "PAUSED" : $"{SimManager.Instance.TickInterval:F2}s / tick";
+        CustomMinimumSize = new Vector2(minimumWidth, 0f),
+        SizeFlagsHorizontal = expand ? Control.SizeFlags.ExpandFill : Control.SizeFlags.ShrinkBegin,
+        VerticalAlignment = VerticalAlignment.Center,
+        MouseFilter = Control.MouseFilterEnum.Ignore,
+    };
+
+    private static Button AddButton(
+        Container parent,
+        string text,
+        Action action,
+        string tooltip = "")
+    {
+        var button = new Button { Text = text, TooltipText = tooltip };
+        button.Pressed += action;
+        parent.AddChild(button);
+        return button;
     }
 
-    private static Label MakeLabel() => new Label { MouseFilter = Control.MouseFilterEnum.Ignore };
-
-    private static Color SeasonColor(Season s) => s switch
+    private static Color SeasonColor(Season season) => season switch
     {
-        Season.Spring => new Color(0.5f, 1.0f, 0.5f),
+        Season.Spring => new Color(0.5f, 1f, 0.5f),
         Season.Summer => Colors.Yellow,
-        Season.Autumn => new Color(1.0f, 0.6f, 0.1f),
-        Season.Winter => new Color(0.6f, 0.85f, 1.0f),
-        _             => Colors.White,
+        Season.Autumn => new Color(1f, 0.6f, 0.1f),
+        Season.Winter => new Color(0.6f, 0.85f, 1f),
+        _ => Colors.White,
     };
 
-    private static string WeatherText(Weather w) => w switch
+    private static Color WeatherColor(Weather weather) => weather switch
     {
-        Weather.Rainy   => "Rain",
-        Weather.Drought => "Drought",
-        _               => "Clear",
-    };
-
-    private static Color WeatherColor(Weather w) => w switch
-    {
-        Weather.Rainy   => new Color(0.4f, 0.7f, 1.0f),
+        Weather.Rainy => new Color(0.4f, 0.7f, 1f),
         Weather.Drought => new Color(0.9f, 0.5f, 0.2f),
-        _               => new Color(0.8f, 0.8f, 0.8f),
+        _ => new Color(0.8f, 0.8f, 0.8f),
     };
 }

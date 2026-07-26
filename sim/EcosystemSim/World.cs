@@ -5,9 +5,13 @@ public class World
     public const int HistoryIntervalDays = 30;
     public const int MaxHistorySamples = 120;
     public const int MaxEvents = 200;
+    public const int InitialGuidancePoints = 8;
+    public const int TraitGuidanceCost = 1;
+    public const int SubspeciesGuidanceCost = 2;
 
     public WorldState State { get; } = new();
     public TerrainSuccessionSettings SuccessionSettings { get; }
+    public int GuidancePointsRemaining { get; private set; } = InitialGuidancePoints;
 
     // Pass a seed to make a run reproducible (same seed → identical tick-by-tick evolution), which is
     // what lets balance tuning hold the RNG fixed while changing one parameter. Omit it (null) for the
@@ -75,8 +79,142 @@ public class World
 
     public void Apply(IWorldCommand command) => command.Execute(State);
 
+    public GuidedEvolutionResult TryGuideEvolution(
+        Population population,
+        GuidedEvolutionTrait trait)
+    {
+        if (!CanGuideEvolution(population, TraitGuidanceCost, out var reason))
+            return new GuidedEvolutionResult(false, reason);
+
+        string message;
+        switch (trait)
+        {
+            case GuidedEvolutionTrait.Larger:
+                if (population.SizeIndex >= 2f)
+                    return new GuidedEvolutionResult(false, "This population is already at the maximum size.");
+                population.SizeIndex = MathF.Min(2f, population.SizeIndex + 0.1f);
+                population.SizePressure = 0f;
+                message = $"{population.Species.Name} guided toward larger size ({population.SizeIndex:F2}).";
+                break;
+
+            case GuidedEvolutionTrait.Smaller:
+                if (population.SizeIndex <= 0.5f)
+                    return new GuidedEvolutionResult(false, "This population is already at the minimum size.");
+                population.SizeIndex = MathF.Max(0.5f, population.SizeIndex - 0.1f);
+                population.SizePressure = 0f;
+                message = $"{population.Species.Name} guided toward smaller size ({population.SizeIndex:F2}).";
+                break;
+
+            case GuidedEvolutionTrait.Immunity:
+                if (population.ImmunityDelta >= 0.5f
+                    || population.EffectiveImmunity >= 1f)
+                {
+                    return new GuidedEvolutionResult(false, "This population cannot gain more immunity.");
+                }
+                population.ImmunityDelta = MathF.Min(
+                    MathF.Min(0.5f, 1f - population.Species.Immunity),
+                    population.ImmunityDelta + 0.05f);
+                population.ImmunityPressure = 0f;
+                message = $"{population.Species.Name} immunity guided to {population.EffectiveImmunity:P0}.";
+                break;
+
+            default:
+                return new GuidedEvolutionResult(false, "Unknown evolution trait.");
+        }
+
+        population.GuidanceSteps++;
+        GuidancePointsRemaining -= TraitGuidanceCost;
+        AddEvent(
+            WorldEventSeverity.Info,
+            message,
+            population.CurrentTile!.X,
+            population.CurrentTile.Y);
+        return new GuidedEvolutionResult(true, message);
+    }
+
+    public GuidedEvolutionResult TryCreateGuidedSubspecies(
+        Population population,
+        string proposedName)
+    {
+        if (!CanGuideEvolution(population, SubspeciesGuidanceCost, out var reason))
+            return new GuidedEvolutionResult(false, reason);
+        if (population.Count < 6)
+            return new GuidedEvolutionResult(false, "At least 6 individuals are needed to branch a subspecies.");
+        if (population.GuidanceSteps == 0)
+            return new GuidedEvolutionResult(false, "Guide at least one trait before branching a subspecies.");
+
+        var name = proposedName.Trim();
+        if (name.Length is < 3 or > 28)
+            return new GuidedEvolutionResult(false, "Subspecies names must be 3–28 characters.");
+        if (name.Any(c => !char.IsLetterOrDigit(c) && c is not ' ' and not '-' and not '\''))
+            return new GuidedEvolutionResult(false, "Use only letters, numbers, spaces, hyphens, or apostrophes.");
+        var root = population.Species.EffectiveRootName;
+        var reservedNames = new[]
+        {
+            $"Greater {root}",
+            $"Giant {root}",
+            $"Lesser {root}",
+            $"Dwarf {root}",
+        };
+        if (reservedNames.Any(n => string.Equals(n, name, StringComparison.OrdinalIgnoreCase)))
+            return new GuidedEvolutionResult(false, "That name is reserved for natural speciation.");
+        if (FindSpecies(name, StringComparison.OrdinalIgnoreCase) is not null)
+            return new GuidedEvolutionResult(false, "That species name is already in use.");
+
+        var tile = population.CurrentTile!;
+        var branchCount = Math.Max(2, population.Count / 3);
+        var species = CreateDerivedSpecies(
+            population.Species,
+            name,
+            population.SizeIndex,
+            population.ImmunityDelta);
+        var branch = ForkFrom(population, branchCount);
+        branch.Species = species;
+        branch.SizeIndex = 1f;
+        branch.SizePressure = 0f;
+        branch.ImmunityDelta = 0f;
+        branch.ImmunityPressure = 0f;
+        branch.GuidanceSteps = 0;
+
+        population.Count -= branchCount;
+        population.GuidanceSteps = 0;
+        population.Faction?.AddPopulation(branch);
+        tile.AddPopulation(branch);
+        GuidancePointsRemaining -= SubspeciesGuidanceCost;
+
+        var message =
+            $"{species.Name} branched from {population.Species.Name} with {branchCount} individuals.";
+        AddEvent(WorldEventSeverity.Info, message, tile.X, tile.Y);
+        return new GuidedEvolutionResult(true, message, branch);
+    }
+
+    private bool CanGuideEvolution(Population population, int cost, out string reason)
+    {
+        if (State.Scenario is not { Kind: ScenarioKind.Sandbox, Status: ScenarioStatus.Active })
+        {
+            reason = "Guided evolution is available in Sandbox mode.";
+            return false;
+        }
+        if (population.Count <= 0
+            || population.CurrentTile is null
+            || !State.Map.AllPopulations().Contains(population))
+        {
+            reason = "This population is no longer active in the world.";
+            return false;
+        }
+        if (GuidancePointsRemaining < cost)
+        {
+            reason = $"Needs {cost} guidance points; {GuidancePointsRemaining} remain.";
+            return false;
+        }
+
+        reason = string.Empty;
+        return true;
+    }
+
     public ScenarioSession StartScenario(ScenarioKind kind)
     {
+        GuidancePointsRemaining = InitialGuidancePoints;
         var scenario = ScenarioFactory.Start(State, kind);
         State.History.Clear();
         State.Events.Clear();
@@ -1102,6 +1240,7 @@ public class World
         SizePressure     = source.SizePressure,
         ImmunityDelta    = source.ImmunityDelta,
         ImmunityPressure = source.ImmunityPressure,
+        GuidanceSteps     = source.GuidanceSteps,
         Disease          = source.Disease,
         InfectionLevel   = source.InfectionLevel,
         WaterExposure    = source.WaterExposure,
@@ -1507,6 +1646,7 @@ public class World
             pop.SizePressure   = 0f;
             pop.ImmunityDelta  = 0f;
             pop.ImmunityPressure = 0f;
+            pop.GuidanceSteps = 0;
         }
     }
 
@@ -1565,10 +1705,12 @@ public class World
         };
     }
 
-    private SpeciesDefinition? FindSpecies(string name) =>
+    private SpeciesDefinition? FindSpecies(
+        string name,
+        StringComparison comparison = StringComparison.Ordinal) =>
         State.Map.AllPopulations()
              .Select(p => p.Species)
-             .FirstOrDefault(s => s.Name == name);
+             .FirstOrDefault(s => string.Equals(s.Name, name, comparison));
 
     // ── helpers ───────────────────────────────────────────────────────────────
 

@@ -8,25 +8,27 @@ namespace EcosystemGame;
 public partial class FactionPanel : CanvasLayer
 {
     private VBoxContainer _content = null!;
+    private PanelContainer _panel = null!;
 
     public override void _Ready()
     {
-        var panel = new PanelContainer();
-        panel.AnchorLeft   = 0f;
-        panel.AnchorTop    = 0f;
-        panel.AnchorRight  = 0f;
-        panel.AnchorBottom = 1f;
-        panel.OffsetLeft   = 0f;
-        panel.OffsetRight  = 260f;
-        panel.OffsetTop    = 0f;
-        panel.OffsetBottom = 0f;
-        panel.MouseFilter  = Control.MouseFilterEnum.Ignore;
-        AddChild(panel);
+        _panel = new PanelContainer();
+        _panel.AnchorLeft   = 0f;
+        _panel.AnchorTop    = 0f;
+        _panel.AnchorRight  = 0f;
+        _panel.AnchorBottom = 1f;
+        _panel.OffsetLeft   = 0f;
+        _panel.OffsetRight  = 260f;
+        _panel.OffsetTop    = 54f;
+        _panel.OffsetBottom = 0f;
+        _panel.MouseFilter  = Control.MouseFilterEnum.Stop;
+        _panel.Visible      = false;
+        AddChild(_panel);
 
         var scroll = new ScrollContainer();
         scroll.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
         scroll.MouseFilter       = Control.MouseFilterEnum.Ignore;
-        panel.AddChild(scroll);
+        _panel.AddChild(scroll);
 
         _content = new VBoxContainer();
         _content.CustomMinimumSize = new Vector2(240f, 0f);
@@ -35,8 +37,11 @@ public partial class FactionPanel : CanvasLayer
 
         SimManager.Instance.Ticked += Rebuild;
         SimManager.Instance.WorldReset += Rebuild;
+        SimManager.Instance.FactionToggleRequested += ToggleVisibility;
         Rebuild();
     }
+
+    private void ToggleVisibility() => _panel.Visible = !_panel.Visible;
 
     private void Rebuild()
     {

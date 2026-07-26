@@ -36,6 +36,9 @@ public class Population
     // accumulates +1 per tick while infected; each 30-tick crossing adds 0.02 to ImmunityDelta
     public float ImmunityPressure { get; set; }
 
+    // Number of player-guided trait changes applied since this population last branched.
+    public int GuidanceSteps { get; set; }
+
     // ticks spent stranded on River terrain; decays by 1/tick when off water.
     // past WaterSurvivalThreshold the population starts drowning.
     public float WaterExposure { get; set; }

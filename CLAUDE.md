@@ -14,7 +14,7 @@ Locust Plague, and Drought Recovery modes. Terminal prototype (`SimConsole`) sti
 
 - **Language:** C# 12, .NET 8
 - **Engine layer:** `EcosystemSim` — a class library, zero UI dependencies, engine-agnostic
-- **Tests:** xUnit 3, `EcosystemSim.Tests` — 115 tests, run `dotnet test` from `sim/`
+- **Tests:** xUnit 3, `EcosystemSim.Tests` — 120 tests, run `dotnet test` from `sim/`
 - **Console UI:** `SimConsole` — terminal renderer / prototype; run from `sim/`
 - **Game UI:** Godot 4.7 (.NET), lives in `godot/`; references `EcosystemSim` via ProjectReference
 
@@ -32,10 +32,10 @@ godot/                      # Godot 4.7 game frontend
     ├── DemoWorldSeeder.cs  # Creates the demo world for the Godot build
     ├── SimMain.cs          # Root node: spawns map, HUD, panels, and scenario selection overlay
     ├── HexMapRenderer.cs   # Instantiates HexTile × 100; PixelToTile + SelectTile
-    ├── HexTile.cs          # One hex cell: Polygon2D terrain + pop Label + selection border
+    ├── HexTile.cs          # Terrain plus overview/close-zoom population rendering
     ├── CameraController.cs # Camera2D: MMB-drag pan, scroll-wheel zoom
-    ├── HUD.cs              # Day / season / year / speed overlay
-    ├── FactionPanel.cs     # Left-side panel: faction list, population summaries, relations
+    ├── HUD.cs              # Compact collapsible toolbar, status, panel toggles, and help
+    ├── FactionPanel.cs     # Toggleable faction list, population summaries, relations
     ├── ScenarioPanel.cs    # Challenge timer, AP budget, objectives, and final result
     ├── ScenarioSelectionOverlay.cs # Startup Sandbox/Challenge mode picker
     ├── HistoryPanel.cs     # Toggleable lineage graph and major-event browser
@@ -60,6 +60,7 @@ sim/
 │   ├── ByproductType.cs    # Enum: Fertilizer
 │   ├── TerrainType.cs      # Terrain definitions, resource compositions, and succession maps
 │   ├── TerrainSuccessionSettings.cs # Configurable degradation/recovery thresholds and rates
+│   ├── GuidedEvolution.cs  # Player-guided trait and subspecies result types
 │   ├── Season.cs           # Enum: Spring/Summer/Autumn/Winter
 │   ├── Weather.cs          # Enum: Normal/Rainy/Drought (world-level regen modifier over seasons)
 │   ├── Disease.cs          # Disease blueprint (spread, mortality, recovery rates)
@@ -88,7 +89,7 @@ sim/
 
 ```bash
 cd sim
-dotnet test                        # run all 115 tests
+dotnet test                        # run all 120 tests
 dotnet run --project SimConsole    # terminal prototype
 dotnet run --project EcoReport -c Release   # headless ecology stability report (balance tuning)
 ```
@@ -307,6 +308,13 @@ unchanged — evolving bigger doesn't change what a species can physically eat).
 to 1.0 on the new baseline. Naming tiers: base → Greater/Lesser → Giant/Dwarf. If two populations
 independently reach the same tier, they share one definition. See **`docs/speciation.md`**.
 
+Sandbox also supports **guided evolution**. Each run starts with 8 guidance points. Size or immunity
+nudge actions cost 1 point, reset the corresponding natural pressure, and mark the population as
+player-guided. After at least one nudge, a population of 6 or more can spend 2 points to split one
+third of itself into a named subspecies. The new species bakes in the current size/immunity traits,
+keeps the lineage root and faction, resets transient modifiers, and emits a located event. Natural
+Greater/Giant/Lesser/Dwarf names are reserved to avoid collisions with automatic speciation.
+
 ### 15. Scenarios and interventions
 `World.StartScenario()` creates an unrestricted Sandbox session or a timed challenge. Challenge
 state lives in `WorldState.Scenario`: remaining days, a shared 10-point budget, objective progress,
@@ -415,7 +423,8 @@ what it needs on specific tiles. Key helpers in `WorldTests.cs`:
 
 1. **More challenge scenarios** — reuse the scenario/objective/action framework for drought,
    disease, predator imbalance, and restoration objectives
-2. **Godot frontend polish** — ocean tile rendering, disease/trade hotkeys, population history graphs
+2. **Custom species creator and persistence** — build on guided evolution with reusable player-made
+   species, starting-roster selection, and sprite customization
 3. **Predator-prey balance tuning** — the refuge/scatter/accumulator *mechanisms* are in place but
    deliberately un-tuned: in a sparse-predator sandbox the equilibrium currently favours prey. Tune
    `PreyRefugeHalfSaturation`, `ScatterMinHerd`, Kronosaurus daily prey demand / `BreedingRate`,
