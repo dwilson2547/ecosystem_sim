@@ -19,6 +19,13 @@ public partial class HexTile : Node2D
     private Label     _warning = null!;
     private bool      _showDetailedContents;
 
+    private static readonly Texture2D GrassTexture = GD.Load<Texture2D>("res://assets/grass.png");
+
+    private static readonly Dictionary<TerrainType, Texture2D> TerrainTextures = new()
+    {
+        [TerrainType.Plains] = GrassTexture,
+    };
+
     private const int   MaxSpeciesIcons  = 5;
     private const float IconSize         = 20f;
     private const float IconSpacing      = 22f;
@@ -60,7 +67,7 @@ public partial class HexTile : Node2D
             verts[i]  = new Vector2(HexSize * MathF.Cos(angle), HexSize * MathF.Sin(angle));
         }
 
-        _bg = new Polygon2D { Polygon = verts };
+        _bg = new Polygon2D { Polygon = verts, TextureRepeat = CanvasItem.TextureRepeatEnum.Enabled };
         AddChild(_bg);
 
         _border = new Line2D { Width = 1.5f, DefaultColor = new Color(0f, 0f, 0f, 0.3f) };
@@ -118,7 +125,13 @@ public partial class HexTile : Node2D
     {
         if (SimTile is null) return;
 
-        _bg.Color = TerrainColor(SimTile.Terrain);
+        var texture = TerrainTextures.GetValueOrDefault(SimTile.Terrain);
+        _bg.Texture = texture;
+        // a textured tile samples continuously across the shared image using its own map
+        // position as the UV offset, so neighboring tiles of the same terrain read as one
+        // continuous surface instead of an obviously repeating per-hex stamp
+        _bg.TextureOffset = -Position;
+        _bg.Color = texture is not null ? Colors.White : TerrainColor(SimTile.Terrain);
 
         // subtle green tint on tiles where fertilizer is accumulating
         var fert = SimTile.Byproducts.FirstOrDefault(b => b.Type == ByproductType.Fertilizer);

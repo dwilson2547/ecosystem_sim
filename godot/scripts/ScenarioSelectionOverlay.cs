@@ -88,7 +88,50 @@ public partial class ScenarioSelectionOverlay : CanvasLayer
             + "and vegetation to 50%.",
             ScenarioKind.DroughtRecovery);
 
+        _content.AddChild(new HSeparator());
+        AddSettings(_content);
+
         _error = AddLabel(_content, CustomSpeciesLibrary.LastError, 12, new Color(1f, 0.35f, 0.35f));
+    }
+
+    private static void AddSettings(Control parent)
+    {
+        var box = new VBoxContainer();
+        box.AddThemeConstantOverride("separation", 6);
+        parent.AddChild(box);
+        AddLabel(box, "SETTINGS", 18, new Color(0.8f, 0.9f, 1f));
+
+        var row = new HBoxContainer();
+        row.AddThemeConstantOverride("separation", 10);
+        box.AddChild(row);
+
+        var resLabel = AddLabel(row, "Resolution", 13, new Color(0.78f, 0.8f, 0.85f));
+        resLabel.SizeFlagsVertical = Control.SizeFlags.ShrinkCenter;
+
+        var resolutionPicker = new OptionButton();
+        for (var i = 0; i < GameSettings.Resolutions.Length; i++)
+            resolutionPicker.AddItem(GameSettings.Resolutions[i].Label, i);
+        var currentIndex = Array.FindIndex(
+            GameSettings.Resolutions,
+            r => r.Size == GameSettings.Resolution);
+        resolutionPicker.Selected = Math.Max(currentIndex, 0);
+        resolutionPicker.Disabled = GameSettings.Fullscreen;
+        row.AddChild(resolutionPicker);
+
+        var fullscreenToggle = new CheckBox
+        {
+            Text = "Fullscreen",
+            ButtonPressed = GameSettings.Fullscreen,
+        };
+        row.AddChild(fullscreenToggle);
+
+        resolutionPicker.ItemSelected += index =>
+            GameSettings.SetResolution(GameSettings.Resolutions[(int)index].Size);
+        fullscreenToggle.Toggled += enabled =>
+        {
+            GameSettings.SetFullscreen(enabled);
+            resolutionPicker.Disabled = enabled;
+        };
     }
 
     private void AddCustomRoster(Control parent, HashSet<string> selected)

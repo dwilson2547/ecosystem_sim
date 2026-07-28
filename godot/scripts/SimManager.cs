@@ -43,6 +43,8 @@ public partial class SimManager : Node
     public override void _Ready()
     {
         Instance = this;
+        GameSettings.Load();
+        GameSettings.Apply();
         World    = DemoWorldSeeder.Create();
         Paused   = true;
     }
